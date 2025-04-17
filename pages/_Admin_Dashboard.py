@@ -26,6 +26,10 @@ except (KeyError, TypeError, ValueError) as e:
      st.warning("Vui lòng thêm 'key' (chuỗi ngẫu nhiên dài >= 32 ký tự) vào mục [cookie] trong Streamlit Secrets.")
      st.stop()
 
+# ... code đọc config và cookie_key ...
+
+st.write(f"DEBUG: Cookie Key Value: {cookie_key}")
+st.write(f"DEBUG: Cookie Key Type: {type(cookie_key)}")
 
 # --- Khởi tạo đối tượng Authenticator ---
 authenticator = stauth.Authenticate(
