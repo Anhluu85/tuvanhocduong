@@ -1,6 +1,6 @@
 streamlit
 google-generativeai
-streamlit-authenticator
+streamlit-authenticator==0.3.2
 PyYAML
 pandas
 # Thêm các thư viện khác bạn cần ở đây...
