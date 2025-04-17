@@ -3,6 +3,9 @@ import google.generativeai as genai
 import os
 from dotenv import load_dotenv # Để đọc file .env khi chạy local
 
+# --- Kiểm tra phiên bản Streamlit lúc chạy (Để debug nếu cần) ---
+# st.write(f"DEBUG: Streamlit Version at Runtime: {st.__version__}")
+
 # --- Cấu hình cơ bản ---
 st.set_page_config(page_title="AI Đồng Hành Học Đường", page_icon="🤖")
 st.title("🤖 AI Đồng Hành Học Đường")
@@ -13,112 +16,103 @@ st.caption("Trò chuyện với AI để được hỗ trợ về học tập, h
 api_key_streamlit = st.secrets.get("GOOGLE_API_KEY")
 
 # Ưu tiên 2: Lấy key từ file .env (khi chạy local) - Cần cài python-dotenv
-load_dotenv()
+load_dotenv() # Tải biến môi trường từ .env (nếu có)
 api_key_env = os.getenv("GOOGLE_API_KEY")
 
-# Ưu tiên 3: Cho phép người dùng nhập (ít an toàn hơn, chỉ dùng để test nhanh)
-# api_key_input = st.text_input("Nhập Google API Key của bạn (nếu chưa cấu hình):", type="password")
-
 # Chọn API Key để sử dụng
+GOOGLE_API_KEY = None
 if api_key_streamlit:
     GOOGLE_API_KEY = api_key_streamlit
-    st.sidebar.success("Đã tải API Key từ Streamlit Secrets.", icon="✅")
+    # st.sidebar.success("Đã tải API Key từ Streamlit Secrets.", icon="✅") # Có thể bỏ comment nếu muốn debug
 elif api_key_env:
     GOOGLE_API_KEY = api_key_env
-    st.sidebar.info("Đã tải API Key từ file .env (local).", icon="📄")
-# elif api_key_input:
-#     GOOGLE_API_KEY = api_key_input
-#     st.sidebar.warning("Sử dụng API Key do người dùng nhập.", icon="⚠️")
-else:
+    # st.sidebar.info("Đã tải API Key từ file .env (local).", icon="📄") # Có thể bỏ comment nếu muốn debug
+
+# Dừng nếu không có API key
+if not GOOGLE_API_KEY:
     st.error("Vui lòng cấu hình Google API Key trong Streamlit Secrets hoặc file .env!")
-    st.stop() # Dừng ứng dụng nếu không có key
+    st.stop()
 
 # --- Khởi tạo mô hình Gemini ---
 try:
     genai.configure(api_key=GOOGLE_API_KEY)
     model = genai.GenerativeModel(
         'gemini-1.5-flash-latest' # Hoặc 'gemini-pro', 'gemini-1.5-pro-latest' tùy nhu cầu
-        # Cân nhắc thêm safety_settings nếu cần kiểm soát nội dung chặt chẽ hơn
-        # safety_settings=[...]
     )
-    # (Tùy chọn) Khởi tạo chat history nếu muốn duy trì ngữ cảnh cuộc trò chuyện
+    # Khởi tạo chat session trong session_state nếu chưa có
     if "chat_session" not in st.session_state:
          st.session_state.chat_session = model.start_chat(history=[])
+         # st.success("DEBUG: Khởi tạo chat session mới.") # Debug log
 
 except Exception as e:
-    st.error(f"Lỗi khởi tạo mô hình Gemini: {e}")
+    st.error(f"Lỗi khởi tạo mô hình Gemini hoặc cấu hình API Key: {e}")
     st.stop()
 
 # --- Giao diện Chat ---
-
-# --- Giao diện Chat ---
 # Hiển thị lịch sử chat (nếu có)
+# Thêm kiểm tra sự tồn tại của session và history
 if "chat_session" in st.session_state and hasattr(st.session_state.chat_session, 'history'):
     for message in st.session_state.chat_session.history:
-        # ---- THÊM KIỂM TRA VÀO ĐÂY ----
-        msg_role = None
+        msg_role = None # Biến tạm để lưu vai trò hợp lệ
+        # Kiểm tra xem message có thuộc tính 'role' và nó có phải là string không
         if hasattr(message, 'role') and isinstance(message.role, str):
-             # Chỉ gán nếu thuộc tính 'role' tồn tại và là một chuỗi
-             msg_role = message.role
+            msg_role = message.role
+            # Chuẩn hóa 'model' thành 'assistant' nếu cần cho st.chat_message
+            if msg_role == 'model':
+                msg_role = 'assistant'
         else:
-            # Xử lý trường hợp không có role hoặc role không phải chuỗi
-            # Bạn có thể bỏ qua tin nhắn này hoặc gán một role mặc định
-            st.warning(f"Tin nhắn trong lịch sử có vai trò không hợp lệ hoặc bị thiếu. Message: {message}")
-            # Tùy chọn 1: Bỏ qua tin nhắn này
-            # continue
-            # Tùy chọn 2: Gán một role mặc định (ví dụ: 'assistant' hoặc 'model')
-            msg_role = "assistant" # Hoặc "model"
+            # Xử lý trường hợp thiếu role hoặc role không hợp lệ
+            st.warning(f"Tin nhắn trong lịch sử có vai trò không hợp lệ hoặc bị thiếu.")
+            # Gán vai trò mặc định để thử hiển thị
+            msg_role = "assistant" # Hoặc có thể bỏ qua bằng 'continue'
 
-        # Chỉ hiển thị nếu có role hợp lệ
-        if msg_role:
+        # Chỉ hiển thị nếu có role hợp lệ (user hoặc assistant)
+        if msg_role in ["user", "assistant"]:
             try:
-                with st.chat_message(role=msg_role):
-                    # Thêm kiểm tra cho message.parts để tránh lỗi khác
+                # **SỬA LỖI QUAN TRỌNG: Dùng name= thay vì role=**
+                with st.chat_message(name=msg_role):
+                    # Kiểm tra message.parts và text trước khi truy cập
                     if message.parts and hasattr(message.parts[0], 'text'):
                         st.markdown(message.parts[0].text)
                     else:
-                        st.markdown("_(Nội dung không hợp lệ hoặc bị thiếu)_")
+                        st.markdown("_(Nội dung tin nhắn không hợp lệ hoặc bị thiếu)_")
             except Exception as display_error:
-                 st.error(f"Lỗi khi hiển thị tin nhắn với role '{msg_role}': {display_error}")
-                 st.json(message) # In ra tin nhắn gây lỗi
+                 # Thông báo lỗi chi tiết hơn
+                 st.error(f"Lỗi khi hiển thị tin nhắn với name '{msg_role}': {display_error}")
+                 # In ra đối tượng message để debug (có thể dùng st.write)
+                 st.write(f"DEBUG: Message object gây lỗi hiển thị:", message)
+        else:
+            # Ghi log nếu gặp role không xử lý được
+            st.warning(f"Bỏ qua tin nhắn với vai trò không xác định: {msg_role}")
+
 
 # Nhận input từ người dùng
 user_prompt = st.chat_input("Bạn cần hỗ trợ gì?")
 
 if user_prompt:
     # Hiển thị tin nhắn người dùng
-    with st.chat_message("user"):
+    # **Sửa (tùy chọn nhưng nên làm): dùng name=**
+    with st.chat_message(name="user"):
         st.markdown(user_prompt)
 
     # Gửi prompt đến Gemini và hiển thị phản hồi
     try:
-        # Đảm bảo chat_session tồn tại trước khi gửi
+        # Đảm bảo chat_session tồn tại
         if "chat_session" in st.session_state:
-             with st.spinner("AI đang suy nghĩ..."):
+            with st.spinner("AI đang suy nghĩ..."):
                 response = st.session_state.chat_session.send_message(user_prompt)
 
-             # Hiển thị phản hồi từ AI (vai trò 'model' thường là mặc định)
-             with st.chat_message("model"):
-                  st.markdown(response.text)
+            # Hiển thị phản hồi từ AI
+            # **Sửa (tùy chọn nhưng nên làm): dùng name=, vai trò là 'assistant'**
+            with st.chat_message(name="assistant"): # Gemini trả về vai trò 'model', nhưng st.chat_message dùng 'assistant'
+                 st.markdown(response.text)
         else:
-            st.error("Lỗi: Phiên chat chưa được khởi tạo.")
+            st.error("Lỗi: Phiên chat chưa được khởi tạo. Vui lòng tải lại trang.")
 
     except Exception as e:
-        st.error(f"Đã xảy ra lỗi khi giao tiếp với AI: {e}")
-    # Gửi prompt đến Gemini và hiển thị phản hồi
-    try:
-        with st.spinner("AI đang suy nghĩ..."): # Hiệu ứng chờ
-            # Gửi prompt đến session chat hiện tại
-            response = st.session_state.chat_session.send_message(user_prompt)
+        st.error(f"Đã xảy ra lỗi khi giao tiếp với AI Gemini: {e}")
 
-        # Hiển thị phản hồi từ AI
-        with st.chat_message("model"): # 'model' là role mặc định của Gemini trong history
-             st.markdown(response.text)
-
-    except Exception as e:
-        st.error(f"Đã xảy ra lỗi khi giao tiếp với AI: {e}")
-
-# --- (Tùy chọn) Các tính năng khác ---
+# --- (Tùy chọn) Các tính năng khác ở Sidebar ---
 st.sidebar.header("Thông tin thêm")
-st.sidebar.write("Đây là phiên bản demo của hệ thống tư vấn học đường bằng AI.")
-# Bạn có thể thêm các nút, thông tin liên hệ chuyên gia, v.v... ở đây
+st.sidebar.write("Đây là hệ thống AI Đồng Hành Học Đường phiên bản thử nghiệm.")
+# Bạn có thể thêm các thông tin khác, liên kết, hướng dẫn tại đây
