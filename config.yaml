@@ -5,7 +5,7 @@ credentials:
       email: admin@yourdomain.com # Email (tùy chọn, không dùng để đăng nhập)
       name: "Admin Trường"        # Tên hiển thị
       # Mật khẩu ĐÃ ĐƯỢC HASH. Xem Bước 3 để tạo hash.
-      password: 'HASHED_PASSWORD_HERE'
+      password: '$2b$12$3NOF/PAXrnWAjxy7iPC1duOwMIMRkVAuAfwXIC2zDqkm81XpCGFdK'
     # Thêm người dùng admin khác nếu cần
     # anotheradmin:
     #   email: user@example.com
