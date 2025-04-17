@@ -1,4 +1,7 @@
 streamlit
 google-generativeai
-python-dotenv # Chỉ cần thiết nếu bạn dùng .env khi chạy local
 streamlit-authenticator
+PyYAML
+pandas
+# Thêm các thư viện khác bạn cần ở đây...
+# Ví dụ: psycopg2-binary (nếu dùng PostgreSQL)
