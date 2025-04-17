@@ -1,4 +1,4 @@
-streamlit
+streamlit>=1.30.0
 google-generativeai
 streamlit-authenticator==0.3.2
 PyYAML
