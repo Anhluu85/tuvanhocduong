@@ -14,3 +14,4 @@ __pycache__/
 # File hệ điều hành
 .DS_Store
 Thumbs.db
+config.yaml
