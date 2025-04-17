@@ -1,49 +1,69 @@
-import streamlit as st
-import streamlit_authenticator as stauth # Import thư viện
-import yaml                             # Import để đọc file YAML
-from yaml.loader import SafeLoader      # Loader an toàn cho YAML
-import pandas as pd
+# pages/🔑_Admin_Dashboard.py
 
- st.set_page_config(page_title="Admin Dashboard", layout="wide")
+import streamlit as st
+import streamlit_authenticator as stauth
+import yaml
+from yaml.loader import SafeLoader
+import pandas as pd
+import os
+import datetime # Thêm để xử lý thời gian nếu cần
+
+# --- Cấu hình trang ---
+# Phải là lệnh Streamlit đầu tiên
+st.set_page_config(page_title="Admin Dashboard", layout="wide", initial_sidebar_state="expanded")
+
 # --- Đọc cấu hình xác thực ---
+# (Giữ nguyên code đọc config.yaml và xử lý lỗi như trước)
+config = None
+config_path = 'config.yaml'
 try:
-    with open('config.yaml') as file:
-        config = yaml.load(file, Loader=SafeLoader)
-except FileNotFoundError:
-    st.error("Lỗi: Không tìm thấy file cấu hình 'config.yaml'.")
-    st.stop()
+    if os.path.exists(config_path):
+        with open(config_path) as file:
+            config = yaml.load(file, Loader=SafeLoader)
+    else:
+        st.error(f"Lỗi: Không tìm thấy file cấu hình tại '{config_path}'.")
+        st.stop()
 except Exception as e:
-    st.error(f"Lỗi khi đọc file config.yaml: {e}")
+    st.error(f"Lỗi đọc/phân tích config.yaml: {e}")
+    st.stop()
+
+if not config:
+    st.error("Lỗi: Không tải được cấu hình.")
     st.stop()
 
 # --- Lấy Cookie Key từ Secrets ---
-# Rất quan trọng để bảo mật cookie key
+# (Giữ nguyên code lấy cookie_key và xử lý lỗi như trước)
+cookie_key = None
 try:
     cookie_key = st.secrets["cookie"]["key"]
     if not cookie_key or len(cookie_key) < 32:
-         raise ValueError("Cookie key không hợp lệ trong secrets.")
-except (KeyError, TypeError, ValueError) as e:
-     st.error(f"Lỗi cấu hình Cookie Key trong Streamlit Secrets: {e}")
-     st.warning("Vui lòng thêm 'key' (chuỗi ngẫu nhiên dài >= 32 ký tự) vào mục [cookie] trong Streamlit Secrets.")
+        raise ValueError("Cookie key không hợp lệ.")
+except Exception as e:
+     st.error(f"Lỗi cấu hình Cookie Key: {e}")
      st.stop()
 
-
-
 # --- Khởi tạo đối tượng Authenticator ---
-authenticator = stauth.Authenticate(
-    config['credentials'],
-    config['cookie']['name'],
-    cookie_key,  # Sử dụng key từ secrets
-    config['cookie']['expiry_days']
-    # Không còn config['preauthorized'] nữa
-)
+# (Giữ nguyên code khởi tạo authenticator và xử lý lỗi như trước)
+authenticator = None
+try:
+    authenticator = stauth.Authenticate(
+        config['credentials'],
+        config['cookie']['name'],
+        cookie_key,
+        config['cookie']['expiry_days']
+    )
+except Exception as e:
+    st.error(f"Lỗi khởi tạo Authenticator: {e}")
+    st.stop()
+
+if not authenticator:
+     st.error("Lỗi: Không khởi tạo được Authenticator.")
+     st.stop()
 
 # --- Hiển thị Form Đăng nhập ---
-# Đặt tên biến `name`, `authentication_status`, `username` đúng như trong ví dụ của thư viện
 name, authentication_status, username = authenticator.login('main')
-# Tham số 'main' hoặc 'sidebar' để chọn vị trí form đăng nhập
 
-# --- Kiểm tra Trạng thái Đăng nhập ---
+# --- Xử lý trạng thái đăng nhập ---
 if authentication_status is False:
     st.error('Tên đăng nhập/mật khẩu không chính xác')
     st.stop()
@@ -51,76 +71,200 @@ elif authentication_status is None:
     st.warning('Vui lòng nhập tên đăng nhập và mật khẩu')
     st.stop()
 elif authentication_status: # Đăng nhập thành công
-    # --- BẮT ĐẦU NỘI DUNG TRANG ADMIN (Chỉ hiển thị khi đã đăng nhập) ---
-   
-    st.sidebar.success(f"Xin chào *{name}*") # Hiển thị tên người dùng đã đăng nhập
-    authenticator.logout('Logout', 'sidebar') # Thêm nút Logout vào sidebar
+    # --- BẮT ĐẦU NỘI DUNG CHÍNH CỦA TRANG ADMIN ---
+    st.sidebar.success(f"Xin chào, **{name}**!")
+    authenticator.logout('Đăng xuất', 'sidebar') # Đổi chữ thành tiếng Việt
 
     st.title("📊 Bảng điều khiển Admin - AI Đồng Hành Học Đường")
-    st.write(f"Chào mừng *{name}* đến trang quản trị!")
+    st.markdown("---")
 
-    # --- DỮ LIỆU MẪU (Sẽ thay bằng dữ liệu từ CSDL thật - Bước sau) ---
-    dummy_conversations_count = 125
-    dummy_alerts_count = 5
-    dummy_popular_topics = {"Học tập": 40, "Thi cử": 25, "Hướng nghiệp": 15, "Tâm lý": 10, "Khác": 10}
-    dummy_alerts = [
-        {"id": "chat_123", "timestamp": "2023-10-27 10:15:00", "reason": "Từ khóa tự hại", "snippet": "...cảm thấy không muốn sống nữa...", "status": "Mới", "assignee": None},
-        {"id": "chat_456", "timestamp": "2023-10-27 09:30:00", "reason": "Lo âu cao độ", "snippet": "...áp lực thi cử quá lớn, mình không chịu nổi...", "status": "Đang xử lý", "assignee": "Tư vấn viên A"},
-        {"id": "chat_789", "timestamp": "2023-10-26 15:00:00", "reason": "Bạo lực học đường", "snippet": "...bị bạn bè bắt nạt...", "status": "Đã giải quyết", "assignee": "Tư vấn viên B"},
-    ]
-    alerts_df = pd.DataFrame(dummy_alerts) # Tạo DataFrame sớm hơn
+    # --- PHẦN TƯƠNG TÁC CSDL (CẦN THAY THẾ BẰNG LOGIC THẬT) ---
+    # Ví dụ hàm kết nối (Cần triển khai thực tế)
+    @st.cache_resource # Cache kết nối để tránh mở lại liên tục
+    def connect_db():
+        try:
+            # --- VIẾT CODE KẾT NỐI CSDL CỦA BẠN Ở ĐÂY ---
+            # Ví dụ với PostgreSQL (cần cài psycopg2-binary)
+            # import psycopg2
+            # conn = psycopg2.connect(
+            #     dbname=st.secrets["database"]["dbname"],
+            #     user=st.secrets["database"]["user"],
+            #     password=st.secrets["database"]["password"],
+            #     host=st.secrets["database"]["host"],
+            #     port=st.secrets["database"]["port"]
+            # )
+            # return conn
 
-    # --- Hiển thị Dashboard ---
-    st.header("📈 Tổng quan")
+            # Ví dụ với MongoDB (cần cài pymongo)
+            # from pymongo import MongoClient
+            # client = MongoClient(st.secrets["mongo"]["uri"])
+            # return client[st.secrets["mongo"]["dbname"]] # Trả về database object
+
+            # --- KẾT THÚC CODE KẾT NỐI ---
+
+            # Nếu chưa có code kết nối, trả về None để xử lý ở dưới
+            st.warning("Chưa cấu hình kết nối CSDL thực tế trong hàm connect_db()")
+            return None
+        except Exception as e:
+            st.error(f"Lỗi kết nối CSDL: {e}")
+            return None
+
+    db_connection = connect_db() # Gọi hàm để lấy kết nối
+
+    # Ví dụ các hàm lấy/cập nhật dữ liệu (Cần triển khai thực tế)
+    def fetch_dashboard_stats(conn):
+        # --- VIẾT CODE TRUY VẤN CSDL ĐỂ LẤY THỐNG KÊ ---
+        # Ví dụ: Đếm số cuộc trò chuyện, số cảnh báo mới,...
+        # Trả về một dictionary hoặc object chứa các số liệu
+        if conn:
+             # cursor = conn.cursor()
+             # cursor.execute("SELECT COUNT(*) FROM conversations WHERE date > NOW() - interval '7 day'")
+             # weekly_chats = cursor.fetchone()[0]
+             # cursor.execute("SELECT COUNT(*) FROM alerts WHERE status = 'Mới'")
+             # new_alerts = cursor.fetchone()[0]
+             # return {"weekly_chats": weekly_chats, "new_alerts": new_alerts, "popular_topic": "Học tập (Demo)"}
+             pass # Bỏ qua nếu chưa có code
+        # Dữ liệu giả lập nếu chưa có CSDL
+        return {"weekly_chats": 150, "new_alerts": 3, "popular_topic": "Thi cử (Demo)"}
+
+    def fetch_alerts(conn, status_filter=None):
+        # --- VIẾT CODE TRUY VẤN CSDL ĐỂ LẤY DANH SÁCH CẢNH BÁO ---
+        # Có thể lọc theo status_filter nếu được cung cấp
+        # Trả về Pandas DataFrame hoặc list of dictionaries
+        if conn:
+             # query = "SELECT id, timestamp, reason, snippet, status, assignee FROM alerts"
+             # params = []
+             # if status_filter and status_filter != "Tất cả":
+             #     query += " WHERE status = %s"
+             #     params.append(status_filter)
+             # query += " ORDER BY timestamp DESC"
+             # df = pd.read_sql(query, conn, params=params)
+             # return df
+             pass
+        # Dữ liệu giả lập
+        dummy_alerts_list = [
+            {"id": "chat_123", "timestamp": datetime.datetime(2023, 10, 27, 10, 15), "reason": "Từ khóa tự hại", "snippet": "...cảm thấy không muốn sống nữa...", "status": "Mới", "assignee": None},
+            {"id": "chat_456", "timestamp": datetime.datetime(2023, 10, 27, 9, 30), "reason": "Lo âu cao độ", "snippet": "...áp lực thi cử quá lớn...", "status": "Đang xử lý", "assignee": "Admin Trường"},
+            {"id": "chat_789", "timestamp": datetime.datetime(2023, 10, 26, 15, 0), "reason": "Bạo lực", "snippet": "...bị bạn bè bắt nạt...", "status": "Đã giải quyết", "assignee": "Admin Trường"},
+            {"id": "chat_101", "timestamp": datetime.datetime(2023, 10, 28, 11, 0), "reason": "Từ khóa trầm cảm", "snippet": "...buồn chán không rõ lý do...", "status": "Mới", "assignee": None},
+        ]
+        df = pd.DataFrame(dummy_alerts_list)
+        if status_filter and status_filter != "Tất cả":
+            return df[df['status'] == status_filter]
+        return df
+
+    def update_alert_status_in_db(conn, alert_id, new_status, assignee):
+        # --- VIẾT CODE CẬP NHẬT TRẠNG THÁI CẢNH BÁO TRONG CSDL ---
+        # Trả về True nếu thành công, False nếu thất bại
+        st.info(f"(Demo) Cập nhật CSDL: ID={alert_id}, Status={new_status}, Assignee={assignee}")
+        if conn:
+            try:
+                # cursor = conn.cursor()
+                # cursor.execute("UPDATE alerts SET status = %s, assignee = %s WHERE id = %s", (new_status, assignee, alert_id))
+                # conn.commit() # Lưu thay đổi
+                # return True
+                pass
+            except Exception as e:
+                st.error(f"Lỗi CSDL khi cập nhật cảnh báo: {e}")
+                # conn.rollback() # Hoàn tác nếu có lỗi
+                return False
+        return True # Giả lập thành công
+
+    # --- KẾT THÚC PHẦN TƯƠNG TÁC CSDL ---
+
+
+    # --- Kiểm tra kết nối CSDL ---
+    if db_connection is None:
+        st.error("Không thể kết nối đến Cơ sở dữ liệu. Các chức năng sẽ sử dụng dữ liệu giả lập hoặc bị hạn chế.")
+        # Có thể chọn dừng ứng dụng ở đây nếu CSDL là bắt buộc: st.stop()
+
+    # --- Hiển thị Dashboard Tổng quan ---
+    st.header("📈 Tổng quan Hoạt động")
+    stats = fetch_dashboard_stats(db_connection)
     col1, col2, col3 = st.columns(3)
-    col1.metric("Tổng số cuộc trò chuyện (Tuần)", dummy_conversations_count)
-    col2.metric("Số cảnh báo mới", len(alerts_df[alerts_df['status'] == 'Mới']))
-    col3.metric("Chủ đề phổ biến nhất", max(dummy_popular_topics, key=dummy_popular_topics.get()))
+    col1.metric("Cuộc trò chuyện (7 ngày)", stats.get("weekly_chats", "N/A"))
+    col2.metric("Cảnh báo mới", stats.get("new_alerts", "N/A"))
+    col3.metric("Chủ đề nổi bật", stats.get("popular_topic", "N/A"))
+    # Thêm biểu đồ nếu cần, ví dụ:
+    # st.line_chart(...) hoặc st.bar_chart(...)
 
-    st.subheader("Chủ đề quan tâm")
-    topic_df = pd.DataFrame(list(dummy_popular_topics.items()), columns=['Chủ đề', 'Số lượng'])
-    st.bar_chart(topic_df.set_index('Chủ đề'))
-
+    st.markdown("---")
 
     # --- Quản lý Cảnh báo ---
     st.header("🚨 Quản lý Cảnh báo")
-    st.write("Các cuộc trò chuyện cần chú ý đặc biệt.")
+    alerts_df = fetch_alerts(db_connection) # Lấy tất cả cảnh báo ban đầu
 
-    status_filter = st.selectbox("Lọc theo trạng thái:", ["Tất cả"] + list(alerts_df['status'].unique()))
-    if status_filter != "Tất cả":
-        filtered_alerts_df = alerts_df[alerts_df['status'] == status_filter]
+    if not alerts_df.empty:
+        # Bộ lọc trạng thái
+        status_list = ["Tất cả"] + list(alerts_df['status'].unique())
+        selected_status = st.selectbox("Lọc theo trạng thái:", status_list)
+
+        # Lọc DataFrame dựa trên lựa chọn
+        if selected_status != "Tất cả":
+            display_df = alerts_df[alerts_df['status'] == selected_status]
+        else:
+            display_df = alerts_df
+
+        # Hiển thị bảng cảnh báo
+        st.dataframe(display_df, use_container_width=True, hide_index=True) # Ẩn index cho gọn
+
+        st.subheader("Xem và Cập nhật Cảnh báo")
+        alert_ids = [""] + list(alerts_df['id'].unique()) # Thêm lựa chọn rỗng
+        selected_alert_id = st.selectbox("Chọn ID cảnh báo để xử lý:", alert_ids)
+
+        if selected_alert_id:
+            selected_data = alerts_df[alerts_df['id'] == selected_alert_id].iloc[0]
+            st.write(f"**Chi tiết cảnh báo ID:** `{selected_data['id']}`")
+            st.write(f"**Thời gian:** {selected_data['timestamp']}")
+            st.write(f"**Lý do:** {selected_data['reason']}")
+            st.write(f"**Trích đoạn:**")
+            st.text_area("Snippet", selected_data['snippet'], height=100, disabled=True) # Dùng text_area để xem dễ hơn
+
+            # Form cập nhật
+            with st.form(key=f"update_alert_{selected_alert_id}"):
+                st.write("**Cập nhật trạng thái và người phụ trách:**")
+                current_status_index = list(alerts_df['status'].unique()).index(selected_data['status'])
+                new_status = st.selectbox("Trạng thái mới:", options=list(alerts_df['status'].unique()), index=current_status_index)
+                assignee = st.text_input("Người phụ trách:", value=selected_data['assignee'] if pd.notna(selected_data['assignee']) else name) # Gán mặc định là admin đang login
+
+                submitted = st.form_submit_button("Lưu thay đổi")
+                if submitted:
+                    # Gọi hàm cập nhật CSDL thực tế
+                    success = update_alert_status_in_db(db_connection, selected_alert_id, new_status, assignee)
+                    if success:
+                        st.success(f"Đã cập nhật thành công cảnh báo {selected_alert_id}!")
+                        # Rerun để làm mới bảng dữ liệu
+                        st.experimental_rerun()
+                    else:
+                        st.error(f"Có lỗi xảy ra khi cập nhật cảnh báo {selected_alert_id}.")
+
     else:
-        filtered_alerts_df = alerts_df
+        st.info("Hiện không có cảnh báo nào.")
 
-    st.dataframe(filtered_alerts_df, use_container_width=True)
+    st.markdown("---")
 
-    selected_alert_id = st.selectbox("Chọn ID cảnh báo để xem/cập nhật:", [""] + list(alerts_df['id']))
-    if selected_alert_id:
-        selected_data = alerts_df[alerts_df['id'] == selected_alert_id].iloc[0]
-        st.write("--- Chi tiết cảnh báo ---")
-        st.write(f"**ID:** {selected_data['id']}")
-        st.write(f"**Thời gian:** {selected_data['timestamp']}")
-        st.write(f"**Lý do:** {selected_data['reason']}")
-        st.write(f"**Trích đoạn:** {selected_data['snippet']}")
-        # Giả lập các action - Bước sau sẽ là tương tác CSDL thật
-        new_status = st.selectbox("Cập nhật trạng thái:", options=list(alerts_df['status'].unique()), index=list(alerts_df['status'].unique()).index(selected_data['status']))
-        assignee = st.text_input("Người phụ trách:", value=selected_data['assignee'] if selected_data['assignee'] else "")
+    # --- Quản lý Cơ sở Kiến thức (Placeholder) ---
+    st.header("📚 Quản lý Cơ sở Kiến thức")
+    st.info("Tính năng này đang được phát triển.")
+    # Ví dụ giao diện đơn giản để thêm FAQ
+    with st.expander("Thêm câu hỏi thường gặp (FAQ) mới (Demo)"):
+        new_question = st.text_input("Câu hỏi:")
+        new_answer = st.text_area("Câu trả lời:")
+        if st.button("Thêm FAQ"):
+            if new_question and new_answer:
+                # --- VIẾT CODE LƯU FAQ VÀO CSDL Ở ĐÂY ---
+                st.success("(Demo) Đã thêm FAQ vào CSDL.")
+            else:
+                st.warning("Vui lòng nhập cả câu hỏi và câu trả lời.")
 
-        if st.button(f"Lưu thay đổi cho {selected_alert_id}"):
-            # BƯỚC SAU: Tại đây sẽ gọi hàm cập nhật CSDL thật sự
-            st.success(f"Đã cập nhật trạng thái thành '{new_status}' và người phụ trách '{assignee}' cho {selected_alert_id} (DEMO).")
-            # Sau khi cập nhật CSDL thành công, nên rerun lại để thấy thay đổi: st.experimental_rerun()
 
-        st.write("---")
+    st.markdown("---")
 
-    # --- Các phần khác (Cần xây dựng thêm) ---
-    st.header("📚 Quản lý Cơ sở Kiến thức (Chưa xây dựng)")
-    # Nơi thêm code quản lý KB
+    # --- Các phần khác (Placeholder) ---
+    st.header("👤 Quản lý Người dùng Admin")
+    st.info("Hiện tại quản lý người dùng qua file `config.yaml`. Cần phát triển giao diện nếu muốn quản lý linh hoạt hơn.")
 
-    st.header("👤 Quản lý Người dùng Admin (Chưa xây dựng)")
-    # Nơi thêm code quản lý user admin (nếu cần giao diện)
+    st.header("💬 Xem lại Lịch sử Chat")
+    st.warning("Tính năng này cần được xây dựng cẩn thận, đảm bảo quyền riêng tư và chỉ truy cập khi thực sự cần thiết cho mục đích gỡ lỗi hoặc điều tra sự cố an toàn.")
 
-    st.header("💬 Xem lại Lịch sử Chat (Chưa xây dựng - Cần cân nhắc kỹ về quyền riêng tư)")
-    # Nơi thêm code xem lịch sử chat
-
-    # --- KẾT THÚC NỘI DUNG TRANG ADMIN ---
+    # --- KẾT THÚC NỘI DUNG CHÍNH CỦA TRANG ADMIN ---
