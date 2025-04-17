@@ -32,8 +32,8 @@ authenticator = stauth.Authenticate(
     config['credentials'],
     config['cookie']['name'],
     cookie_key,  # Sử dụng key từ secrets
-    config['cookie']['expiry_days'],
-    config['preauthorized']
+    config['cookie']['expiry_days']
+    # Không còn config['preauthorized'] nữa
 )
 
 # --- Hiển thị Form Đăng nhập ---
