@@ -4,6 +4,7 @@ import yaml                             # Import để đọc file YAML
 from yaml.loader import SafeLoader      # Loader an toàn cho YAML
 import pandas as pd
 
+ st.set_page_config(page_title="Admin Dashboard", layout="wide")
 # --- Đọc cấu hình xác thực ---
 try:
     with open('config.yaml') as file:
@@ -51,7 +52,7 @@ elif authentication_status is None:
     st.stop()
 elif authentication_status: # Đăng nhập thành công
     # --- BẮT ĐẦU NỘI DUNG TRANG ADMIN (Chỉ hiển thị khi đã đăng nhập) ---
-    st.set_page_config(page_title="Admin Dashboard", layout="wide")
+   
     st.sidebar.success(f"Xin chào *{name}*") # Hiển thị tên người dùng đã đăng nhập
     authenticator.logout('Logout', 'sidebar') # Thêm nút Logout vào sidebar
 
