@@ -30,6 +30,10 @@ except (KeyError, TypeError, ValueError) as e:
 
 st.write(f"DEBUG: Cookie Key Value: {cookie_key}")
 st.write(f"DEBUG: Cookie Key Type: {type(cookie_key)}")
+st.write(f"DEBUG: Expiry Days Value: {config['cookie']['expiry_days']}")
+st.write(f"DEBUG: Expiry Days Type: {type(config['cookie']['expiry_days'])}")
+st.write(f"DEBUG: Cookie Name Value: {config['cookie']['name']}")
+st.write(f"DEBUG: Cookie Name Type: {type(config['cookie']['name'])}")
 
 # --- Khởi tạo đối tượng Authenticator ---
 authenticator = stauth.Authenticate(
