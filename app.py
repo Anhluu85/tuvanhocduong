@@ -50,10 +50,37 @@ except Exception as e:
     st.stop()
 
 # --- Giao diện Chat ---
+
+# --- Giao diện Chat ---
 # Hiển thị lịch sử chat (nếu có)
-for message in st.session_state.chat_session.history:
-    with st.chat_message(role=message.role):
-        st.markdown(message.parts[0].text)
+if "chat_session" in st.session_state and hasattr(st.session_state.chat_session, 'history'):
+    for message in st.session_state.chat_session.history:
+        # ---- THÊM KIỂM TRA VÀO ĐÂY ----
+        msg_role = None
+        if hasattr(message, 'role') and isinstance(message.role, str):
+             # Chỉ gán nếu thuộc tính 'role' tồn tại và là một chuỗi
+             msg_role = message.role
+        else:
+            # Xử lý trường hợp không có role hoặc role không phải chuỗi
+            # Bạn có thể bỏ qua tin nhắn này hoặc gán một role mặc định
+            st.warning(f"Tin nhắn trong lịch sử có vai trò không hợp lệ hoặc bị thiếu. Message: {message}")
+            # Tùy chọn 1: Bỏ qua tin nhắn này
+            # continue
+            # Tùy chọn 2: Gán một role mặc định (ví dụ: 'assistant' hoặc 'model')
+            msg_role = "assistant" # Hoặc "model"
+
+        # Chỉ hiển thị nếu có role hợp lệ
+        if msg_role:
+            try:
+                with st.chat_message(role=msg_role):
+                    # Thêm kiểm tra cho message.parts để tránh lỗi khác
+                    if message.parts and hasattr(message.parts[0], 'text'):
+                        st.markdown(message.parts[0].text)
+                    else:
+                        st.markdown("_(Nội dung không hợp lệ hoặc bị thiếu)_")
+            except Exception as display_error:
+                 st.error(f"Lỗi khi hiển thị tin nhắn với role '{msg_role}': {display_error}")
+                 st.json(message) # In ra tin nhắn gây lỗi
 
 # Nhận input từ người dùng
 user_prompt = st.chat_input("Bạn cần hỗ trợ gì?")
@@ -63,6 +90,21 @@ if user_prompt:
     with st.chat_message("user"):
         st.markdown(user_prompt)
 
+    # Gửi prompt đến Gemini và hiển thị phản hồi
+    try:
+        # Đảm bảo chat_session tồn tại trước khi gửi
+        if "chat_session" in st.session_state:
+             with st.spinner("AI đang suy nghĩ..."):
+                response = st.session_state.chat_session.send_message(user_prompt)
+
+             # Hiển thị phản hồi từ AI (vai trò 'model' thường là mặc định)
+             with st.chat_message("model"):
+                  st.markdown(response.text)
+        else:
+            st.error("Lỗi: Phiên chat chưa được khởi tạo.")
+
+    except Exception as e:
+        st.error(f"Đã xảy ra lỗi khi giao tiếp với AI: {e}")
     # Gửi prompt đến Gemini và hiển thị phản hồi
     try:
         with st.spinner("AI đang suy nghĩ..."): # Hiệu ứng chờ
