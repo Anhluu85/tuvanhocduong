@@ -1,0 +1,3 @@
+streamlit
+google-generativeai
+python-dotenv # Chỉ cần thiết nếu bạn dùng .env khi chạy local
