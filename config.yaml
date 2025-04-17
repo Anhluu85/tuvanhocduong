@@ -1,0 +1,21 @@
+credentials:
+  usernames:
+    # Thay 'adminuser' bằng tên đăng nhập bạn muốn
+    adminuser:
+      email: admin@yourdomain.com # Email (tùy chọn, không dùng để đăng nhập)
+      name: "Admin Trường"        # Tên hiển thị
+      # Mật khẩu ĐÃ ĐƯỢC HASH. Xem Bước 3 để tạo hash.
+      password: 'HASHED_PASSWORD_HERE'
+    # Thêm người dùng admin khác nếu cần
+    # anotheradmin:
+    #   email: user@example.com
+    #   name: "Tư vấn viên A"
+    #   password: 'ANOTHER_HASHED_PASSWORD'
+cookie:
+  expiry_days: 30                # Thời gian cookie đăng nhập hết hạn (ngày)
+  # Key phải là một chuỗi NGẪU NHIÊN và BÍ MẬT, dài ít nhất 32 ký tự
+  # Sẽ lấy key này từ Streamlit Secrets sau
+  key: 'some_random_string_to_be_replaced_by_secret'
+  name: 'some_cookie_name'       # Tên của cookie lưu trên trình duyệt
+preauthorized:
+  emails: []                     # Có thể dùng nếu tích hợp với OAuth (không cần cho TH này)
