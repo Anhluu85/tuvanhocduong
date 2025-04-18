@@ -4,5 +4,5 @@ streamlit-authenticator==0.3.2
 PyYAML
 pandas
 python-dotenv
+psycopg2-binary
 # Thêm các thư viện khác bạn cần ở đây...
-# Ví dụ: psycopg2-binary (nếu dùng PostgreSQL)
