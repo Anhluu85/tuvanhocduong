@@ -41,9 +41,7 @@ if "api_chat_session" not in st.session_state:
 # --- Trong khối xử lý input mới ---
 user_prompt = st.chat_input("Nhập câu hỏi hoặc điều bạn muốn chia sẻ...")
 
-         
-
-
+ 
 st.title("🤖 Trợ Lý Học Đường AI")
 # Sử dụng caption đã chọn
 st.caption("Hỏi đáp cùng AI về học tập, nghề nghiệp, cảm xúc và các khó khăn trong đời sống học đường.")
