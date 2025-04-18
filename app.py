@@ -1,105 +1,220 @@
+# app.py
+
 import streamlit as st
 import google.generativeai as genai
 import os
-from dotenv import load_dotenv # Để đọc file .env khi chạy local
-import datetime # Thêm để có timestamp
+from dotenv import load_dotenv
+import datetime
+import psycopg2 # Để tương tác với PostgreSQL (Neon)
+import pandas as pd # Vẫn cần cho một số xử lý dữ liệu
 
 # --- Cấu hình cơ bản ---
-st.set_page_config(page_title="AI Đồng Hành Học Đường", page_icon="🤖", layout="wide") # Thêm layout="wide"
-st.title("🤖 AI Đồng Hành Học Đường")
-st.caption("Trò chuyện với AI để được hỗ trợ về học tập, hướng nghiệp và hơn thế nữa!")
+st.set_page_config(
+    page_title="Trợ Lý Học Đường AI",
+    page_icon="🤖",
+    layout="wide" # Sử dụng layout rộng cho giao diện chat
+)
 
-# --- Quản lý API Key ---
-# (Giữ nguyên code quản lý API Key của bạn)
-# Ưu tiên 1: Lấy key từ Streamlit Secrets (khi deploy)
-api_key_streamlit = st.secrets.get("GOOGLE_API_KEY")
-# Ưu tiên 2: Lấy key từ file .env (khi chạy local)
+st.title("🤖 Trợ Lý Học Đường AI")
+# Sử dụng caption đã chọn
+st.caption("Hỏi đáp cùng AI về học tập, nghề nghiệp, cảm xúc và các khó khăn trong đời sống học đường.")
+
+# --- Quản lý API Key và Cấu hình ---
+
+# Load .env file if it exists (for local development)
 load_dotenv()
-api_key_env = os.getenv("GOOGLE_API_KEY")
-# Chọn API Key
-GOOGLE_API_KEY = api_key_streamlit or api_key_env
-if not GOOGLE_API_KEY:
-    st.error("Vui lòng cấu hình Google API Key trong Streamlit Secrets hoặc file .env!")
+
+# Lấy Google API Key
+google_api_key = st.secrets.get("GOOGLE_API_KEY", os.getenv("GOOGLE_API_KEY"))
+if not google_api_key:
+    st.error("Lỗi: Không tìm thấy GOOGLE_API_KEY. Vui lòng cấu hình trong Streamlit Secrets hoặc file .env.")
     st.stop()
 
-# --- Khởi tạo mô hình Gemini ---
+# Lấy thông tin kết nối DB Neon
+db_secrets = st.secrets.get("database")
+if not db_secrets:
+    st.error("Lỗi: Không tìm thấy cấu hình [database] trong Streamlit Secrets.")
+    # Không dừng hoàn toàn, nhưng chức năng cảnh báo sẽ không hoạt động
+    # st.stop() # Bỏ comment nếu CSDL là bắt buộc ngay từ đầu
+
+# --- Khởi tạo Mô hình Gemini ---
 try:
-    genai.configure(api_key=GOOGLE_API_KEY)
-    model = genai.GenerativeModel(
-        'gemini-1.5-flash-latest' # Hoặc 'gemini-pro', 'gemini-1.5-pro-latest'
-    )
-    # --- QUAN TRỌNG: Quản lý lịch sử trong session_state ---
-    # Chúng ta sẽ lưu lịch sử riêng để dễ dàng thêm lời chào và quản lý
-    if "gemini_history" not in st.session_state:
-        st.session_state.gemini_history = []
-        # Chỉ khởi tạo chat session API khi cần gửi tin nhắn đầu tiên
-        # Bỏ st.session_state.chat_session = model.start_chat(history=[]) ở đây
-
+    genai.configure(api_key=google_api_key)
+    model = genai.GenerativeModel('gemini-1.5-flash-latest') # Hoặc phiên bản khác
 except Exception as e:
-    st.error(f"Lỗi khởi tạo mô hình Gemini hoặc cấu hình API Key: {e}")
+    st.error(f"Lỗi khởi tạo mô hình Gemini: {e}")
+    print(f"Gemini Initialization Error: {e}")
     st.stop()
 
-# --- Hàm gửi tin nhắn và cập nhật lịch sử (bao gồm cả history của API) ---
-# Cần hàm này để đồng bộ history của API và history hiển thị
-def send_message_to_gemini(prompt):
+# --- Phần Kết nối và Tương tác CSDL ---
+
+# Sử dụng cache_resource cho kết nối DB để tái sử dụng
+@st.cache_resource(ttl=600)
+def connect_db():
+    """Kết nối đến CSDL PostgreSQL."""
+    print("Attempting to connect to the database...")
+    if not db_secrets: # Kiểm tra lại nếu db_secrets chưa được load
+        print("DB connection info missing in secrets.")
+        return None
     try:
-        # Khởi tạo chat session API nếu chưa có hoặc nếu history API trống
-        # Điều này cho phép chúng ta thêm tin nhắn hệ thống/chào mừng vào history hiển thị
-        # mà không gửi nó lên API ngay lập tức.
-        if "api_chat_session" not in st.session_state:
-             # Xây dựng lại history cho API từ history hiển thị (loại bỏ lời chào)
-             api_history_for_init = []
-             for msg in st.session_state.gemini_history:
-                 # Chỉ lấy tin nhắn user/assistant thực sự, không lấy lời chào/hướng dẫn
-                 if msg["role"] in ["user", "assistant"] and msg.get("is_greeting", False) is False:
-                     api_history_for_init.append({
-                         "role": "user" if msg["role"] == "user" else "model", # Chuyển 'assistant' thành 'model' cho API
-                         "parts": [{"text": msg["content"]}]
-                     })
-             st.session_state.api_chat_session = model.start_chat(history=api_history_for_init)
-             print("DEBUG: Initialized API chat session.")
-
-        # Gửi tin nhắn mới
-        response = st.session_state.api_chat_session.send_message(prompt)
-        return response.text
+        if "uri" in db_secrets:
+            conn = psycopg2.connect(db_secrets["uri"])
+        elif "host" in db_secrets:
+            conn = psycopg2.connect(
+                host=db_secrets["host"],
+                port=db_secrets.get("port", 5432),
+                dbname=db_secrets["dbname"],
+                user=db_secrets["user"],
+                password=db_secrets["password"],
+                sslmode=db_secrets.get("sslmode", "require")
+            )
+        else:
+            print("DB connection info incomplete in secrets.")
+            return None
+        print("Database connection successful!")
+        return conn
+    except psycopg2.OperationalError as e:
+         # Không hiển thị lỗi trực tiếp trên UI chính, chỉ log
+         print(f"DB Connection OperationalError: {e}. Check credentials, host, port, network, SSL.")
+         return None
     except Exception as e:
-        st.error(f"Lỗi khi gửi tin nhắn đến Gemini: {e}")
-        print(f"Error sending message to Gemini: {e}") # Log lỗi
-        return None # Trả về None nếu lỗi
+        print(f"DB Connection Error: {e}")
+        return None
 
-# --- Giao diện Chat ---
+def create_alert_in_db(session_id, reason, snippet, priority, status='Mới', user_id_associated=None):
+    """Tạo một bản ghi cảnh báo mới trong bảng 'alerts'."""
+    conn = connect_db() # Lấy kết nối (có thể trả về None)
+    if conn is None:
+        print("CRITICAL: Cannot create alert - No DB connection.")
+        st.warning("Không thể ghi nhận cảnh báo do lỗi kết nối CSDL.") # Thông báo nhẹ nhàng trên UI
+        return False
 
-# 1. Hiển thị lời chào và giới thiệu ban đầu (chỉ khi lịch sử trống)
+    cursor = None
+    alert_created = False
+    try:
+        cursor = conn.cursor()
+        print(f"Creating alert: session={session_id}, reason='{reason}', priority={priority}")
+        # **QUAN TRỌNG**: Đảm bảo tên bảng và cột khớp CSDL Neon
+        sql = """
+            INSERT INTO alerts (chat_session_id, reason, snippet, priority, status, user_id_associated)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        cursor.execute(sql, (session_id, reason, snippet, priority, status, user_id_associated))
+        conn.commit() # Lưu vào CSDL
+        alert_created = True
+        print(f"Alert created successfully for session {session_id}.")
+    except Exception as e:
+        if conn: conn.rollback()
+        print(f"--- DATABASE ERROR Creating Alert ---")
+        print(f"Session ID: {session_id}, Reason: {reason}")
+        print(f"Error: {e}, Type: {type(e).__name__}")
+        print(f"-----------------------------------")
+        st.warning(f"Gặp sự cố khi lưu cảnh báo vào hệ thống ({type(e).__name__}).") # Thông báo nhẹ nhàng
+    finally:
+        if cursor: cursor.close()
+        # Không đóng conn vì nó được cache
+
+    return alert_created
+
+# --- Phần Logic Nhận diện Rủi ro ---
+
+# !!! DANH SÁCH TỪ KHÓA RẤT CƠ BẢN - CẦN MỞ RỘNG VÀ XÁC THỰC !!!
+RISK_KEYWORDS = {
+    "tự hại": ["muốn chết", "kết thúc", "tự tử", "không muốn sống", "tự làm đau", "dao kéo", "tuyệt vọng"],
+    "bạo lực": ["bị đánh", "bị đập", "bị trấn", "bị đe dọa", "bắt nạt hội đồng"],
+    # Thêm các nhóm khác: lo âu nghiêm trọng, lạm dụng,...
+}
+
+def detect_risk(text):
+    """Phát hiện từ khóa rủi ro. Trả về loại rủi ro hoặc None."""
+    text_lower = text.lower()
+    for risk_type, keywords in RISK_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword in text_lower:
+                print(f"!!! RISK DETECTED: Type={risk_type}, Keyword='{keyword}'")
+                return risk_type
+    return None
+
+def get_emergency_response_message(risk_type):
+    """Trả về nội dung tin nhắn khẩn cấp soạn sẵn."""
+    # !!! THAY BẰNG THÔNG TIN LIÊN HỆ THẬT !!!
+    emergency_contacts = """
+- Đường dây nóng ABC: **[SỐ ĐIỆN THOẠI THẬT]**
+- Tư vấn viên trường XYZ: **[THÔNG TIN LIÊN HỆ THẬT]**
+- Hoặc nói chuyện ngay với thầy/cô/người lớn mà bạn tin tưởng nhất."""
+
+    base_message = f"Mình nhận thấy bạn đang đề cập đến một vấn đề rất nghiêm trọng ({risk_type}). Sự an toàn của bạn là quan trọng nhất lúc này. " \
+                   f"Mình là AI và không thể thay thế sự hỗ trợ trực tiếp từ chuyên gia. " \
+                   f"Vui lòng liên hệ ngay các nguồn trợ giúp sau đây nhé:\n{emergency_contacts}"
+    return base_message
+
+# --- Quản lý Session Chat Gemini và Lịch sử Hiển thị ---
+
+if "gemini_history" not in st.session_state:
+    st.session_state.gemini_history = []
+    print("Initialized empty display history.")
+
+if "api_chat_session" not in st.session_state:
+    # Chỉ khởi tạo khi cần gửi tin nhắn đầu tiên hoặc reset
+    st.session_state.api_chat_session = None
+    print("API Chat Session placeholder created.")
+
+def get_api_chat_session():
+    """Lấy hoặc khởi tạo session chat với Gemini API."""
+    if st.session_state.api_chat_session is None:
+        print("API chat session is None, attempting to initialize...")
+        try:
+            # Xây dựng history cho API từ history hiển thị (loại lời chào, chuyển role)
+            api_history_for_init = []
+            for msg in st.session_state.gemini_history:
+                if msg["role"] in ["user", "assistant"] and not msg.get("is_greeting", False):
+                    api_role = "user" if msg["role"] == "user" else "model"
+                    api_history_for_init.append({"role": api_role, "parts": [{"text": msg["content"]}]})
+
+            st.session_state.api_chat_session = model.start_chat(history=api_history_for_init)
+            print("Initialized API chat session successfully.")
+        except Exception as e:
+            st.error("Lỗi khởi tạo phiên chat với AI. Vui lòng thử lại.")
+            print(f"Error initializing API chat session: {e}")
+            return None # Trả về None nếu không khởi tạo được
+    return st.session_state.api_chat_session
+
+# --- Giao diện Chat Chính ---
+
+# 1. Hiển thị lời chào ban đầu
 if not st.session_state.gemini_history:
     timestamp_greet = datetime.datetime.now()
+    greeting_content = (
+        "Xin chào! Mình là Trợ Lý Học Đường AI, ở đây để lắng nghe và hỗ trợ bạn. "
+        "Hãy hỏi mình về học tập, nghề nghiệp, cảm xúc hoặc những khó khăn bạn gặp nhé! 😊\n\n"
+        "**Lưu ý:** Mình chỉ là AI hỗ trợ, không thay thế chuyên gia tâm lý. "
+        "Nếu bạn đang gặp khủng hoảng, hãy liên hệ ngay với người lớn tin cậy hoặc [Đường dây nóng hỗ trợ](#). <span style='color:red; font-weight:bold;'>(Cần thay link/số thật)</span>"
+    )
     greeting_message = {
-        "role": "assistant",
-        "content": (
-            "Xin chào! Mình là AI Đồng Hành, ở đây để lắng nghe và hỗ trợ bạn. "
-            "Mình có thể cung cấp thông tin, gợi ý giải pháp cho các vấn đề học đường thường gặp. 😊\n\n"
-            "**Lưu ý:** Mình chỉ là AI hỗ trợ, không thay thế chuyên gia tâm lý. "
-            "Nếu bạn đang gặp khủng hoảng, hãy liên hệ ngay với người lớn tin cậy hoặc [Đường dây nóng hỗ trợ](#). <span style='color:red; font-weight:bold;'>(Cần thay link/số thật)</span>"
-        ),
-        "timestamp": timestamp_greet,
-        "is_greeting": True # Đánh dấu đây là tin nhắn chào mừng
+        "role": "assistant", "content": greeting_content,
+        "timestamp": timestamp_greet, "is_greeting": True
     }
-    st.session_state.gemini_history.append(greeting_message) # Lưu vào lịch sử hiển thị
-    # Tin nhắn này không được gửi lên API history ban đầu
+    st.session_state.gemini_history.append(greeting_message)
+    print("Added initial greeting message to display history.")
 
-# 2. Hiển thị các tin nhắn đã có trong lịch sử `st.session_state.gemini_history`
+# 2. Hiển thị lịch sử chat
 for message in st.session_state.gemini_history:
     role = message["role"]
     avatar = "🧑‍🎓" if role == "user" else "🤖"
-    with st.chat_message(name=role, avatar=avatar): # Sử dụng name=role
-        st.markdown(message["content"], unsafe_allow_html=True) # Cho phép HTML cho link/định dạng trong lời chào
+    with st.chat_message(name=role, avatar=avatar):
+        # Cho phép HTML cho link trong lời chào, nhưng cẩn thận với input người dùng
+        allow_html = message.get("is_greeting", False) or message.get("is_emergency", False)
+        st.markdown(message["content"], unsafe_allow_html=allow_html)
         if "timestamp" in message:
              st.caption(message["timestamp"].strftime('%H:%M:%S %d/%m/%Y'))
+        if message.get("is_emergency", False):
+             st.error("❗ Hãy ưu tiên liên hệ hỗ trợ khẩn cấp theo thông tin trên.")
 
-# 3. Ô nhập liệu và xử lý input mới
-user_prompt = st.chat_input("Bạn cần hỗ trợ gì?")
+# 3. Ô nhập liệu và xử lý
+user_prompt = st.chat_input("Nhập câu hỏi hoặc điều bạn muốn chia sẻ...")
 
 if user_prompt:
-    # a. Lưu và Hiển thị tin nhắn người dùng
+    # a. Lưu và hiển thị tin nhắn người dùng
     timestamp_user = datetime.datetime.now()
     user_message = {"role": "user", "content": user_prompt, "timestamp": timestamp_user}
     st.session_state.gemini_history.append(user_message)
@@ -107,38 +222,75 @@ if user_prompt:
         st.markdown(user_prompt)
         st.caption(timestamp_user.strftime('%H:%M:%S %d/%m/%Y'))
 
-    # b. Gửi prompt đến Gemini và nhận phản hồi
-    with st.spinner("AI đang suy nghĩ..."):
-        ai_response_content = send_message_to_gemini(user_prompt)
+    # b. Xử lý prompt: Kiểm tra rủi ro trước
+    ai_response_content = None
+    is_emergency_response = False
+    detected_risk = detect_risk(user_prompt)
+
+    with st.spinner("Trợ lý AI đang xử lý..."):
+        if detected_risk:
+            print(f"Risk detected: {detected_risk}. Generating emergency response.")
+            is_emergency_response = True
+            ai_response_content = get_emergency_response_message(detected_risk)
+            # TẠO CẢNH BÁO TRONG DB
+            # !!! THAY THẾ ID TẠM THỜI BẰNG ID THẬT !!!
+            temp_session_id = "temp_session_123"
+            temp_user_id = "temp_user_abc"
+            create_alert_in_db(
+                session_id=temp_session_id,
+                reason=f"Phát hiện rủi ro: {detected_risk}",
+                snippet=user_prompt[:500], # Giới hạn độ dài snippet
+                priority=1, # Ưu tiên cao
+                user_id_associated=temp_user_id
+            )
+        else:
+            # Nếu không có rủi ro, gọi Gemini
+            print("No risk detected. Sending prompt to Gemini.")
+            chat_session = get_api_chat_session()
+            if chat_session:
+                try:
+                    response = chat_session.send_message(user_prompt)
+                    ai_response_content = response.text
+                    print("Received response from Gemini.")
+                except Exception as e:
+                    st.error(f"Đã xảy ra lỗi khi giao tiếp với AI Gemini: {e}")
+                    print(f"Error calling Gemini API: {e}")
+            else:
+                # Lỗi đã được báo khi get_api_chat_session không thành công
+                ai_response_content = "Xin lỗi, đã có lỗi xảy ra với phiên chat AI."
+
 
     # c. Hiển thị và Lưu tin nhắn AI (nếu có phản hồi)
     if ai_response_content:
         timestamp_ai = datetime.datetime.now()
-        ai_message = {"role": "assistant", "content": ai_response_content, "timestamp": timestamp_ai}
+        ai_message = {
+            "role": "assistant", "content": ai_response_content,
+            "timestamp": timestamp_ai, "is_emergency": is_emergency_response
+        }
         st.session_state.gemini_history.append(ai_message)
         with st.chat_message(name="assistant", avatar="🤖"):
-            st.markdown(ai_response_content)
+            st.markdown(ai_response_content, unsafe_allow_html=is_emergency_response) # Cho phép HTML cho tin nhắn khẩn cấp
             st.caption(timestamp_ai.strftime('%H:%M:%S %d/%m/%Y'))
+            if is_emergency_response:
+                st.error("❗ Hãy ưu tiên liên hệ hỗ trợ khẩn cấp theo thông tin trên.")
     else:
-        # Có thể thêm thông báo nếu AI không trả lời được
-        st.warning("AI hiện tại không thể phản hồi. Vui lòng thử lại sau.")
+         # Chỉ hiển thị cảnh báo nếu không phải lỗi kết nối DB đã báo trước đó
+        if db_secrets: # Nếu cấu hình DB có vẻ ổn nhưng AI vẫn không phản hồi
+             st.warning("Trợ Lý AI hiện không thể phản hồi. Vui lòng thử lại sau.")
 
-
-# --- Sidebar với các liên kết (Tích hợp từ mẫu) ---
+# --- Sidebar ---
 with st.sidebar:
     st.header("Công cụ khác")
-    # !!! THAY BẰNG ĐƯỜNG DẪN THỰC TẾ ĐẾN CÁC TRANG CỦA BẠN !!!
-    # Ví dụ: st.page_link("pages/02_📚_Thư_viện.py", label="📚 Thư viện Tài nguyên")
-    # Ví dụ: st.page_link("pages/03_📅_Đặt_lịch.py", label="📅 Đặt lịch hẹn")
-    st.markdown("- [📚 Thư viện Tài nguyên](#)") # Placeholder link
-    st.markdown("- [📅 Đặt lịch hẹn](#)")     # Placeholder link
+    # !!! THAY BẰNG LINK THẬT ĐẾN CÁC TRANG KHÁC NẾU CÓ !!!
+    st.markdown("- [📚 Thư viện Tài nguyên](#)")
+    st.markdown("- [📅 Đặt lịch hẹn](#)")
+    st.markdown("- [🔑 Admin Dashboard](#)") # Link tới trang admin nếu muốn
+
     st.divider()
     st.header("Hỗ trợ khẩn cấp")
     # !!! THAY BẰNG THÔNG TIN THẬT !!!
-    st.markdown("- Đường dây nóng ABC: [Số điện thoại]")
-    st.markdown("- Tư vấn viên trường XYZ: [Thông tin liên hệ]")
+    st.markdown("- Đường dây nóng ABC: **[SỐ ĐIỆN THOẠI]**")
+    st.markdown("- Tư vấn viên trường XYZ: **[LIÊN HỆ]**")
     st.divider()
-    st.info("AI Đồng Hành đang trong giai đoạn thử nghiệm.")
-
-# --- NHẮC NHỞ QUAN TRỌNG ---
-st.sidebar.warning("Lưu ý: Lịch sử chat hiện tại **chưa được lưu** vào Cơ sở dữ liệu Neon.")
+    st.info("Trợ Lý Học Đường AI đang trong giai đoạn thử nghiệm.")
+    st.warning("Lịch sử chat sẽ bị mất khi bạn đóng trình duyệt/tab.")
