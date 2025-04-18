@@ -125,32 +125,53 @@ elif authentication_status: # Đăng nhập thành công
         # Dữ liệu giả lập nếu chưa có CSDL
         return {"weekly_chats": 150, "new_alerts": 3, "popular_topic": "Thi cử (Demo)"}
 
-    def fetch_alerts(conn, status_filter=None):
-        # --- VIẾT CODE TRUY VẤN CSDL ĐỂ LẤY DANH SÁCH CẢNH BÁO ---
-        # Có thể lọc theo status_filter nếu được cung cấp
-        # Trả về Pandas DataFrame hoặc list of dictionaries
-        if conn:
-             # query = "SELECT id, timestamp, reason, snippet, status, assignee FROM alerts"
-             # params = []
-             # if status_filter and status_filter != "Tất cả":
-             #     query += " WHERE status = %s"
-             #     params.append(status_filter)
-             # query += " ORDER BY timestamp DESC"
-             # df = pd.read_sql(query, conn, params=params)
-             # return df
-             pass
-        # Dữ liệu giả lập
+def fetch_alerts(conn, status_filter=None):
+    # Nhánh này chỉ chạy nếu connect_db() trả về None
+    if conn is None:
+        st.warning("Không có kết nối CSDL, sử dụng dữ liệu giả lập cho cảnh báo.")
         dummy_alerts_list = [
-            {"id": "chat_123", "timestamp": datetime.datetime(2023, 10, 27, 10, 15), "reason": "Từ khóa tự hại", "snippet": "...cảm thấy không muốn sống nữa...", "status": "Mới", "assignee": None},
-            {"id": "chat_456", "timestamp": datetime.datetime(2023, 10, 27, 9, 30), "reason": "Lo âu cao độ", "snippet": "...áp lực thi cử quá lớn...", "status": "Đang xử lý", "assignee": "Admin Trường"},
-            {"id": "chat_789", "timestamp": datetime.datetime(2023, 10, 26, 15, 0), "reason": "Bạo lực", "snippet": "...bị bạn bè bắt nạt...", "status": "Đã giải quyết", "assignee": "Admin Trường"},
-            {"id": "chat_101", "timestamp": datetime.datetime(2023, 10, 28, 11, 0), "reason": "Từ khóa trầm cảm", "snippet": "...buồn chán không rõ lý do...", "status": "Mới", "assignee": None},
+             {"id": "chat_123", "timestamp": datetime.datetime(2023, 10, 27, 10, 15), "reason": "Từ khóa tự hại", "snippet": "...cảm thấy không muốn sống nữa...", "status": "Mới", "assignee": None},
+             {"id": "chat_456", "timestamp": datetime.datetime(2023, 10, 27, 9, 30), "reason": "Lo âu cao độ", "snippet": "...áp lực thi cử quá lớn...", "status": "Đang xử lý", "assignee": "Admin Trường"},
+             {"id": "chat_789", "timestamp": datetime.datetime(2023, 10, 26, 15, 0), "reason": "Bạo lực", "snippet": "...bị bạn bè bắt nạt...", "status": "Đã giải quyết", "assignee": "Admin Trường"},
+             {"id": "chat_101", "timestamp": datetime.datetime(2023, 10, 28, 11, 0), "reason": "Từ khóa trầm cảm", "snippet": "...buồn chán không rõ lý do...", "status": "Mới", "assignee": None},
         ]
         df = pd.DataFrame(dummy_alerts_list)
+        # Đảm bảo cột timestamp là datetime nếu dùng dummy
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
         if status_filter and status_filter != "Tất cả":
-            return df[df['status'] == status_filter]
+            # Lọc dữ liệu dummy
+            return df[df['status'] == status_filter].copy() # Thêm .copy() để tránh SettingWithCopyWarning
+        return df.copy() # Thêm .copy()
+
+    # Nhánh này chạy nếu connect_db() thành công và trả về connection object
+    try:
+        query = "SELECT id, timestamp, reason, snippet, status, assignee, priority FROM alerts" # Thêm priority nếu có
+        params = []
+        if status_filter and status_filter != "Tất cả":
+            query += " WHERE status = %s" # Sử dụng tham số hóa!
+            params.append(status_filter)
+        query += " ORDER BY timestamp DESC" # Sắp xếp theo thời gian mới nhất
+
+        # Dùng pandas để đọc trực tiếp vào DataFrame
+        df = pd.read_sql(query, conn, params=params)
+
+        # Chuyển đổi kiểu dữ liệu nếu cần (đặc biệt là timestamp)
+        # Nếu cột 'id' trong DB là số (SERIAL), không cần làm gì thêm.
+        # Nếu cột 'timestamp' đọc vào chưa đúng kiểu datetime, chuyển đổi:
+        if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
+             df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+        # Có thể cần xử lý múi giờ nếu CSDL lưu UTC và bạn muốn hiển thị giờ địa phương
+        # Ví dụ: df['timestamp'] = df['timestamp'].dt.tz_convert('Asia/Ho_Chi_Minh')
+
         return df
 
+    except Exception as e:
+        st.error(f"Lỗi truy vấn danh sách cảnh báo: {e}")
+         # In thêm chi tiết lỗi ra console/terminal để gỡ lỗi
+        print(f"Chi tiết lỗi fetch_alerts: {e}")
+        print(f"Loại lỗi: {type(e).__name__}")
+        return pd.DataFrame() # Trả về DataFrame rỗng nếu lỗi
     def update_alert_status_in_db(conn, alert_id, new_status, assignee):
         # --- VIẾT CODE CẬP NHẬT TRẠNG THÁI CẢNH BÁO TRONG CSDL ---
         # Trả về True nếu thành công, False nếu thất bại
