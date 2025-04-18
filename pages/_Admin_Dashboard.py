@@ -7,7 +7,7 @@ from yaml.loader import SafeLoader
 import pandas as pd
 import os
 import datetime # Thêm để xử lý thời gian nếu cần
-
+import psycopg2 # <--- THÊM DÒNG NÀY
 # --- Cấu hình trang ---
 # Phải là lệnh Streamlit đầu tiên
 st.set_page_config(page_title="Admin Dashboard", layout="wide", initial_sidebar_state="expanded")
