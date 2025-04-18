@@ -123,6 +123,41 @@ def create_alert_in_db(session_id, reason, snippet, priority, status='Mới', us
 
     return alert_created
 
+# Lưu lịch sử
+def save_message_to_db(session_id, user_id, sender, content, is_greeting=False, is_emergency=False):
+    """Lưu một tin nhắn vào bảng 'conversations'."""
+    conn = connect_db() # Lấy kết nối CSDL
+    if conn is None:
+        print("Error saving message: No DB connection.")
+        # Không nên hiện lỗi trên UI chat chính, chỉ log
+        return False
+
+    cursor = None
+    saved = False
+    try:
+        cursor = conn.cursor()
+        print(f"Saving message: session={session_id}, user={user_id}, sender={sender}") # Log
+        # KIỂM TRA TÊN BẢNG/CỘT CHO KHỚP CSDL CỦA BẠN
+        sql = """
+            INSERT INTO conversations (session_id, user_id, sender, message_content, is_greeting, is_emergency)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        cursor.execute(sql, (session_id, user_id, sender, content, is_greeting, is_emergency))
+        conn.commit() # Lưu vào CSDL
+        saved = True
+        print("Message saved successfully.") # Log
+    except Exception as e:
+        if conn: conn.rollback()
+        print(f"--- DATABASE ERROR Saving Message ---")
+        print(f"Session: {session_id}, User: {user_id}, Sender: {sender}")
+        print(f"Error: {e}, Type: {type(e).__name__}")
+        print(f"-----------------------------------")
+        # Không nên hiện lỗi trên UI chat chính
+    finally:
+        if cursor: cursor.close()
+        # Không đóng conn
+
+    return saved
 # --- Phần Logic Nhận diện Rủi ro ---
 
 # !!! DANH SÁCH TỪ KHÓA RẤT CƠ BẢN - CẦN MỞ RỘNG VÀ XÁC THỰC !!!
@@ -218,13 +253,28 @@ for message in st.session_state.gemini_history:
              st.error("❗ Hãy ưu tiên liên hệ hỗ trợ khẩn cấp theo thông tin trên.")
 
 # 3. Ô nhập liệu và xử lý
+# --- Trong khối xử lý input mới ---
 user_prompt = st.chat_input("Nhập câu hỏi hoặc điều bạn muốn chia sẻ...")
 
 if user_prompt:
-    # a. Lưu và hiển thị tin nhắn người dùng
+    # --- QUAN TRỌNG: Xác định session_id và user_id (HIỆN TẠI LÀ TẠM THỜI) ---
+    # !!! THAY BẰNG LOGIC LẤY ID THẬT SAU NÀY !!!
+    temp_session_id = "temp_session_123"
+    temp_user_id = "temp_user_abc"
+    # ---------------------------------------------------------------------
+
+    # a. Lưu và Hiển thị tin nhắn người dùng
     timestamp_user = datetime.datetime.now()
     user_message = {"role": "user", "content": user_prompt, "timestamp": timestamp_user}
     st.session_state.gemini_history.append(user_message)
+    # *** GỌI HÀM LƯU TIN NHẮN USER ***
+    save_message_to_db(
+        session_id=temp_session_id,
+        user_id=temp_user_id,
+        sender="user",
+        content=user_prompt
+    )
+    # Hiển thị tin nhắn user (như cũ)
     with st.chat_message(name="user", avatar="🧑‍🎓"):
         st.markdown(user_prompt)
         st.caption(timestamp_user.strftime('%H:%M:%S %d/%m/%Y'))
@@ -236,36 +286,29 @@ if user_prompt:
 
     with st.spinner("Trợ lý AI đang xử lý..."):
         if detected_risk:
-            print(f"Risk detected: {detected_risk}. Generating emergency response.")
+            # ... (logic xử lý rủi ro và tạo cảnh báo như cũ) ...
             is_emergency_response = True
             ai_response_content = get_emergency_response_message(detected_risk)
-            # TẠO CẢNH BÁO TRONG DB
-            # !!! THAY THẾ ID TẠM THỜI BẰNG ID THẬT !!!
-            temp_session_id = "temp_session_123"
-            temp_user_id = "temp_user_abc"
             create_alert_in_db(
                 session_id=temp_session_id,
                 reason=f"Phát hiện rủi ro: {detected_risk}",
-                snippet=user_prompt[:500], # Giới hạn độ dài snippet
-                priority=1, # Ưu tiên cao
-                user_id_associated=temp_user_id
+                snippet=user_prompt[:500],
+                priority=1,
+                user_id_associated=temp_user_id # Cột này trong alerts
             )
         else:
-            # Nếu không có rủi ro, gọi Gemini
-            print("No risk detected. Sending prompt to Gemini.")
-            chat_session = get_api_chat_session()
-            if chat_session:
-                try:
-                    response = chat_session.send_message(user_prompt)
-                    ai_response_content = response.text
-                    print("Received response from Gemini.")
-                except Exception as e:
-                    st.error(f"Đã xảy ra lỗi khi giao tiếp với AI Gemini: {e}")
-                    print(f"Error calling Gemini API: {e}")
-            else:
-                # Lỗi đã được báo khi get_api_chat_session không thành công
-                ai_response_content = "Xin lỗi, đã có lỗi xảy ra với phiên chat AI."
-
+            # ... (logic gọi Gemini như cũ) ...
+             chat_session = get_api_chat_session()
+             if chat_session:
+                 try:
+                     response = chat_session.send_message(user_prompt)
+                     ai_response_content = response.text
+                     print("Received response from Gemini.")
+                 except Exception as e:
+                     st.error(f"Đã xảy ra lỗi khi giao tiếp với AI Gemini: {e}")
+                     print(f"Error calling Gemini API: {e}")
+             else:
+                 ai_response_content = "Xin lỗi, đã có lỗi xảy ra với phiên chat AI."
 
     # c. Hiển thị và Lưu tin nhắn AI (nếu có phản hồi)
     if ai_response_content:
@@ -275,11 +318,21 @@ if user_prompt:
             "timestamp": timestamp_ai, "is_emergency": is_emergency_response
         }
         st.session_state.gemini_history.append(ai_message)
+        # *** GỌI HÀM LƯU TIN NHẮN AI ***
+        save_message_to_db(
+            session_id=temp_session_id,
+            user_id=temp_user_id, # Lưu cùng user_id cho tin nhắn AI? Hoặc để NULL?
+            sender="assistant",
+            content=ai_response_content,
+            is_emergency=is_emergency_response
+        )
+        # Hiển thị tin nhắn AI (như cũ)
         with st.chat_message(name="assistant", avatar="🤖"):
-            st.markdown(ai_response_content, unsafe_allow_html=is_emergency_response) # Cho phép HTML cho tin nhắn khẩn cấp
+            st.markdown(ai_response_content, unsafe_allow_html=is_emergency_response)
             st.caption(timestamp_ai.strftime('%H:%M:%S %d/%m/%Y'))
             if is_emergency_response:
                 st.error("❗ Hãy ưu tiên liên hệ hỗ trợ khẩn cấp theo thông tin trên.")
+    # ... (phần else như cũ) ...
     else:
          # Chỉ hiển thị cảnh báo nếu không phải lỗi kết nối DB đã báo trước đó
         if db_secrets: # Nếu cấu hình DB có vẻ ổn nhưng AI vẫn không phản hồi
