@@ -359,18 +359,22 @@ if user_prompt:
         }
         st.session_state.gemini_history.append(ai_message)
         # *** GỌI HÀM LƯU TIN NHẮN AI (với ID tự động) ***
-        save_message_to_db(
+        save_message_to_db( # <<< SỬA DÒNG NÀY VÀ CÁC DÒNG SAU
             session_id=session_id_to_save,
-            user_id=user_id_to_save, # Dùng cùng ID ẩn danh cho cả tin nhắn AI trong phiên đó
+            user_id=user_id_to_save, # Vẫn dùng user ID ẩn danh
             sender="assistant",
             content=ai_response_content,
-            is_emergency=is_emergency_response
+            related_alert_id=created_alert_id # <<< Chỉ cần cái này, không cần is_emergency
+            # XÓA DÒNG: is_emergency=is_emergency_response
         )
-        # Hiển thị tin nhắn AI (như cũ)
+
+        # Hiển thị tin nhắn AI
         with st.chat_message(name="assistant", avatar="🤖"):
-            st.markdown(ai_response_content, unsafe_allow_html=is_emergency_response)
+             # Dùng created_alert_id để quyết định unsafe_allow_html và hiển thị lỗi
+            allow_html_for_ai = (created_alert_id is not None)
+            st.markdown(ai_response_content, unsafe_allow_html=allow_html_for_ai)
             st.caption(timestamp_ai.strftime('%H:%M:%S %d/%m/%Y'))
-            if is_emergency_response:
+            if created_alert_id is not None: # Kiểm tra bằng alert ID thay vì biến is_emergency cũ
                 st.error("❗ Hãy ưu tiên liên hệ hỗ trợ khẩn cấp theo thông tin trên.")
     else:
          # Chỉ hiển thị cảnh báo nếu không phải lỗi kết nối DB đã báo trước đó
