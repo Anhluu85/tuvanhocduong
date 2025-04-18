@@ -17,6 +17,53 @@ st.set_page_config(
     layout="wide" # Sử dụng layout rộng cho giao diện chat
 )
 
+def save_message_to_db(session_id, user_id, sender, content, related_alert_id=None):
+    """Lưu một tin nhắn vào bảng 'conversations'."""
+    conn = connect_db()
+    if conn is None:
+        print("CRITICAL: Cannot save message - No DB connection.")
+        # st.warning("Không thể lưu tin nhắn do lỗi kết nối CSDL.") # Bỏ comment nếu muốn hiển thị
+        return False
+
+    cursor = None
+    message_saved = False
+    try:
+        cursor = conn.cursor()
+        # Sử dụng timestamp từ Python để đảm bảo tính nhất quán
+        timestamp_to_save = datetime.datetime.now()
+
+        # --- SQL khớp với bảng 'conversations' của bạn ---
+        sql = """
+            INSERT INTO conversations
+            (session_id, user_id, sender, message_content, timestamp, related_alert_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        cursor.execute(sql, (session_id, user_id, sender, content, timestamp_to_save, related_alert_id))
+        conn.commit()
+        message_saved = True
+        print(f"Message saved to 'conversations': session={session_id}, sender={sender}, related_alert_id={related_alert_id}")
+    except psycopg2.Error as db_err: # Bắt lỗi cụ thể của psycopg2
+        if conn: conn.rollback()
+        print(f"--- DATABASE ERROR Saving Message to 'conversations' (psycopg2) ---")
+        print(f"Session ID: {session_id}, Sender: {sender}")
+        print(f"PostgreSQL Error Code: {db_err.pgcode}")
+        print(f"Error Message: {db_err.pgerror}")
+        print(f"Data passed: session='{session_id}', user='{user_id}', sender='{sender}', related_alert_id={related_alert_id}")
+        print(f"----------------------------------------------------")
+        # st.warning(f"Lỗi CSDL khi lưu tin nhắn: {db_err.pgcode}") # Cân nhắc hiển thị lỗi này
+    except Exception as e:
+        if conn: conn.rollback()
+        print(f"--- GENERAL ERROR Saving Message to 'conversations' ---")
+        print(f"Session ID: {session_id}, Sender: {sender}")
+        print(f"Error: {e}, Type: {type(e).__name__}")
+        print(f"----------------------------------------------------")
+        # st.warning(f"Lỗi hệ thống khi lưu tin nhắn: {type(e).__name__}") # Cân nhắc hiển thị lỗi này
+    finally:
+        if cursor: cursor.close()
+        # Không đóng conn vì nó được cache
+
+    return message_saved
+
 def get_session_id():
     """Tạo hoặc lấy session_id duy nhất cho phiên hiện tại."""
     if "session_id" not in st.session_state:
