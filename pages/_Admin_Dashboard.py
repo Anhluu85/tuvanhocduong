@@ -281,6 +281,43 @@ elif authentication_status: # Đăng nhập thành công
         finally:
             if cursor: cursor.close()
 
+# ... (sau các hàm CSDL khác) ...
+
+def fetch_chat_history(conn, session_id):
+    """Lấy lịch sử chat cho một session_id cụ thể từ CSDL."""
+    if conn is None or not session_id:
+        st.warning("Yêu cầu Session ID để truy vấn lịch sử chat.")
+        return pd.DataFrame() # Trả về DataFrame rỗng
+
+    print(f"Fetching chat history for session: {session_id}") # Log
+    try:
+        # Lấy các cột cần thiết, sắp xếp theo thời gian
+        query = """
+            SELECT timestamp, sender, message_content, user_id -- Lấy user_id nếu cần
+            FROM conversations
+            WHERE session_id = %s
+            ORDER BY timestamp ASC
+        """
+        df = pd.read_sql(query, conn, params=(session_id,))
+        print(f"Fetched {len(df)} messages for session {session_id}.") # Log số lượng
+
+        # Chuyển đổi kiểu dữ liệu nếu cần
+        if not df.empty:
+            if 'timestamp' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
+                 df['timestamp'] = pd.to_datetime(df['timestamp'])
+            # Xử lý múi giờ nếu cần
+            # Ví dụ: df['timestamp'] = df['timestamp'].dt.tz_convert('Asia/Ho_Chi_Minh')
+
+        return df
+
+    except Exception as e:
+        st.error(f"LỖI fetch_chat_history cho session {session_id}: {e}")
+        print(f"--- LỖI TRONG fetch_chat_history ---")
+        print(f"Session ID: {session_id}")
+        print(f"Lỗi: {e}")
+        print(f"Loại lỗi: {type(e).__name__}")
+        print(f"---------------------------------")
+        return pd.DataFrame() # Trả về DataFrame rỗng
     # --- KẾT THÚC ĐỊNH NGHĨA HÀM CSDL ---
 
     # --- Kiểm tra kết nối CSDL ---
@@ -432,7 +469,56 @@ elif authentication_status: # Đăng nhập thành công
     st.header("👤 Quản lý Người dùng Admin")
     st.info("Hiện tại quản lý người dùng qua file `config.yaml`.")
 
-    st.header("💬 Xem lại Lịch sử Chat")
-    st.warning("Tính năng này cần xây dựng cẩn thận, đảm bảo quyền riêng tư.")
+        # ... (sau phần Quản lý Cơ sở Kiến thức) ...
 
+    st.markdown("---")
+
+    # --- Xem lại Lịch sử Chat ---
+    st.header("💬 Xem lại Lịch sử Chat")
+    st.warning("⚠️ Tính năng này chỉ dành cho mục đích gỡ lỗi và điều tra sự cố an toàn. Truy cập phải được ghi log và tuân thủ quy định bảo mật.")
+
+    # --- Cơ chế tìm kiếm/lọc đơn giản ---
+    # Cách 1: Tìm theo Session ID (nếu bạn biết ID)
+    search_session_id = st.text_input("Nhập Session ID để xem lịch sử chat:", key="chat_session_search")
+
+    # Cách 2: Hoặc liên kết từ Bảng Cảnh báo (Nếu bạn đã lưu session_id trong bảng alerts)
+    st.write("Hoặc chọn từ cảnh báo (nếu có Session ID liên kết):")
+    # Lấy danh sách session_id từ các cảnh báo đã fetch (alerts_df)
+    linked_session_ids = [""] # Thêm lựa chọn rỗng
+    if 'alerts_df' in locals() and isinstance(alerts_df, pd.DataFrame) and 'chat_session_id' in alerts_df.columns:
+         # Lấy các session_id không rỗng và duy nhất
+         valid_sessions = alerts_df[pd.notna(alerts_df['chat_session_id'])]['chat_session_id'].unique()
+         linked_session_ids.extend(list(valid_sessions))
+
+    selected_linked_session = st.selectbox("Chọn Session ID từ cảnh báo:", options=linked_session_ids, key="chat_session_select")
+
+    # Xác định session_id cần tìm
+    session_id_to_fetch = None
+    if search_session_id:
+        session_id_to_fetch = search_session_id
+    elif selected_linked_session:
+        session_id_to_fetch = selected_linked_session
+
+    # Nếu có session_id để tìm và có kết nối DB
+    if session_id_to_fetch and db_connection:
+        st.write(f"Đang tải lịch sử cho Session ID: `{session_id_to_fetch}`")
+        chat_history_df = fetch_chat_history(db_connection, session_id_to_fetch)
+
+        if not chat_history_df.empty:
+            st.write(f"**Lịch sử chat:**")
+            # Hiển thị dạng chat message mô phỏng
+            for index, row in chat_history_df.iterrows():
+                role = "user" if str(row.get('sender', '')).lower() == 'user' else "assistant"
+                timestamp_str = row['timestamp'].strftime('%Y-%m-%d %H:%M:%S') if pd.notna(row.get('timestamp')) else ""
+                with st.chat_message(role):
+                     st.markdown(row.get('message_content', ''))
+                     # Có thể thêm user_id (nếu được phép) và timestamp vào caption
+                     st.caption(f"Sender: {row.get('sender', 'N/A')} | User: {row.get('user_id', 'N/A')} | Time: {timestamp_str}")
+        elif db_connection: # Chỉ báo không tìm thấy nếu có kết nối DB
+            st.info(f"Không tìm thấy lịch sử chat cho Session ID: {session_id_to_fetch}")
+    elif (search_session_id or selected_linked_session) and not db_connection:
+         st.error("Không thể tìm kiếm lịch sử chat do không có kết nối CSDL.")
+
+
+    # --- KẾT THÚC NỘI DUNG CHÍNH CỦA TRANG ADMIN ---
     # --- KẾT THÚC NỘI DUNG CHÍNH CỦA TRANG ADMIN ---
