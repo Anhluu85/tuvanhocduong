@@ -7,7 +7,7 @@ from yaml.loader import SafeLoader
 import pandas as pd
 import os
 import datetime # Thêm để xử lý thời gian nếu cần
-import psycopg2 # Đảm bảo đã import
+import psycopg2 # <--- THÊM DÒNG NÀY
 
 # --- Cấu hình trang ---
 st.set_page_config(page_title="Admin Dashboard", layout="wide", initial_sidebar_state="expanded")
@@ -60,7 +60,7 @@ if not authenticator:
 # --- Hiển thị Form Đăng nhập ---
 # Sử dụng key khác nhau cho widget login ở các trang khác nhau nếu cần
 # Hoặc dùng 'main' nếu chỉ có 1 form login chính
-name, authentication_status, username = authenticator.login(key='admin_login_form') # Đặt key riêng cho form này
+name, authentication_status, username = authenticator.login('main')
 
 # --- Xử lý trạng thái đăng nhập ---
 if authentication_status is False:
