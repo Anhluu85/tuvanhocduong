@@ -253,7 +253,7 @@ def fetch_alerts(conn, status_filter=None):
                     if success:
                         st.success(f"Đã cập nhật thành công cảnh báo {selected_alert_id}!")
                         # Rerun để làm mới bảng dữ liệu
-                        st.experimental_rerun()
+                        st.rerun()
                     else:
                         st.error(f"Có lỗi xảy ra khi cập nhật cảnh báo {selected_alert_id}.")
 
