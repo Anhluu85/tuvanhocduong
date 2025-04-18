@@ -7,7 +7,119 @@ from dotenv import load_dotenv
 import datetime
 import psycopg2 # Để tương tác với PostgreSQL (Neon)
 import pandas as pd # Vẫn cần cho một số xử lý dữ liệu
+import uuid # Thư viện để tạo ID duy nhất
 
+# --- Ngay sau phần import ---
+def get_session_id():
+    """Tạo hoặc lấy session_id duy nhất cho phiên hiện tại."""
+    if "session_id" not in st.session_state:
+        # Tạo một UUID mới làm session_id khi phiên bắt đầu
+        st.session_state.session_id = str(uuid.uuid4())
+        print(f"Generated new session ID: {st.session_state.session_id}") # Log
+    return st.session_state.session_id
+
+# --- Quản lý Session Chat Gemini và Lịch sử Hiển thị ---
+# Gọi hàm này sớm để đảm bảo session_id được tạo
+current_session_id = get_session_id()
+# st.sidebar.caption(f"Session ID: {current_session_id}") # Có thể hiển thị để debug
+
+if "gemini_history" not in st.session_state:
+    st.session_state.gemini_history = []
+    print("Initialized empty display history.")
+
+if "api_chat_session" not in st.session_state:
+    st.session_state.api_chat_session = None
+    print("API Chat Session placeholder created.")
+
+# --- Trong khối xử lý input mới ---
+user_prompt = st.chat_input("Nhập câu hỏi hoặc điều bạn muốn chia sẻ...")
+
+if user_prompt:
+    # --- Lấy session_id đã được tạo ---
+    session_id_to_save = current_session_id
+
+    # --- TẠO USER ID ẨN DANH TỰ ĐỘNG ---
+    # Cách đơn giản: Dùng một phần của session_id hoặc một UUID khác.
+    # Quan trọng: ID này không liên kết trực tiếp với thông tin cá nhân nào.
+    # Nếu bạn KHÔNG cần phân biệt các tin nhắn của cùng một người dùng ẩn danh
+    # qua các phiên khác nhau, bạn có thể dùng chính session_id làm user_id ẩn danh.
+    # Hoặc tạo một ID ẩn danh riêng lưu trong session state nếu cần phân biệt hơn chút.
+    if "anonymous_user_id" not in st.session_state:
+         st.session_state.anonymous_user_id = f"anon-{str(uuid.uuid4())[:8]}" # Ví dụ: anon-abcdef12
+         print(f"Generated anonymous user ID: {st.session_state.anonymous_user_id}")
+    user_id_to_save = st.session_state.anonymous_user_id
+    # ------------------------------------------
+
+    # a. Lưu và Hiển thị tin nhắn người dùng
+    timestamp_user = datetime.datetime.now()
+    user_message = {"role": "user", "content": user_prompt, "timestamp": timestamp_user}
+    st.session_state.gemini_history.append(user_message)
+    # *** GỌI HÀM LƯU TIN NHẮN USER (với ID tự động) ***
+    save_message_to_db(
+        session_id=session_id_to_save,
+        user_id=user_id_to_save, # Dùng ID ẩn danh
+        sender="user",
+        content=user_prompt
+    )
+    # Hiển thị tin nhắn user (như cũ)
+    with st.chat_message(name="user", avatar="🧑‍🎓"):
+        st.markdown(user_prompt)
+        st.caption(timestamp_user.strftime('%H:%M:%S %d/%m/%Y'))
+
+    # b. Xử lý prompt: Kiểm tra rủi ro trước
+    ai_response_content = None
+    is_emergency_response = False
+    detected_risk = detect_risk(user_prompt)
+
+    with st.spinner("Trợ lý AI đang xử lý..."):
+        if detected_risk:
+            # ... (logic xử lý rủi ro) ...
+            is_emergency_response = True
+            ai_response_content = get_emergency_response_message(detected_risk)
+            # Tạo cảnh báo trong DB (với ID tự động)
+            create_alert_in_db(
+                session_id=session_id_to_save,
+                reason=f"Phát hiện rủi ro: {detected_risk}",
+                snippet=user_prompt[:500],
+                priority=1,
+                user_id_associated=user_id_to_save # Dùng ID ẩn danh
+            )
+        else:
+            # ... (logic gọi Gemini) ...
+             chat_session = get_api_chat_session()
+             if chat_session:
+                 try:
+                     response = chat_session.send_message(user_prompt)
+                     ai_response_content = response.text
+                     print("Received response from Gemini.")
+                 except Exception as e:
+                     st.error(f"Đã xảy ra lỗi khi giao tiếp với AI Gemini: {e}")
+                     print(f"Error calling Gemini API: {e}")
+             else:
+                 ai_response_content = "Xin lỗi, đã có lỗi xảy ra với phiên chat AI."
+
+    # c. Hiển thị và Lưu tin nhắn AI (nếu có phản hồi)
+    if ai_response_content:
+        timestamp_ai = datetime.datetime.now()
+        ai_message = {
+            "role": "assistant", "content": ai_response_content,
+            "timestamp": timestamp_ai, "is_emergency": is_emergency_response
+        }
+        st.session_state.gemini_history.append(ai_message)
+        # *** GỌI HÀM LƯU TIN NHẮN AI (với ID tự động) ***
+        save_message_to_db(
+            session_id=session_id_to_save,
+            user_id=user_id_to_save, # Dùng cùng ID ẩn danh cho cả tin nhắn AI trong phiên đó
+            sender="assistant",
+            content=ai_response_content,
+            is_emergency=is_emergency_response
+        )
+        # Hiển thị tin nhắn AI (như cũ)
+        with st.chat_message(name="assistant", avatar="🤖"):
+            st.markdown(ai_response_content, unsafe_allow_html=is_emergency_response)
+            st.caption(timestamp_ai.strftime('%H:%M:%S %d/%m/%Y'))
+            if is_emergency_response:
+                st.error("❗ Hãy ưu tiên liên hệ hỗ trợ khẩn cấp theo thông tin trên.")
 # --- Cấu hình cơ bản ---
 st.set_page_config(
     page_title="Trợ Lý Học Đường AI",
