@@ -322,7 +322,7 @@ if user_prompt:
     ai_response_content = None
     is_emergency_response = False
     detected_risk = detect_risk(user_prompt)
-
+    created_alert_id = None # <<< THÊM HOẶC ĐẢM BẢO DÒNG NÀY CÓ Ở ĐÂY
     with st.spinner("Trợ lý AI đang xử lý..."):
         if detected_risk:
             # ... (logic xử lý rủi ro) ...
