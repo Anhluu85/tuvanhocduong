@@ -1,118 +1,86 @@
 import streamlit as st
-import google.generativeai as genai
-import os
-from dotenv import load_dotenv # Để đọc file .env khi chạy local
+import datetime
 
-# --- Kiểm tra phiên bản Streamlit lúc chạy (Để debug nếu cần) ---
-# st.write(f"DEBUG: Streamlit Version at Runtime: {st.__version__}")
+st.set_page_config(page_title="AI Đồng Hành - Chat", layout="wide")
 
-# --- Cấu hình cơ bản ---
-st.set_page_config(page_title="AI Đồng Hành Học Đường", page_icon="🤖")
-st.title("🤖 AI Đồng Hành Học Đường")
-st.caption("Trò chuyện với AI để được hỗ trợ về học tập, hướng nghiệp và hơn thế nữa!")
+st.title("💬 AI Đồng Hành Học Đường")
+st.caption("Người bạn AI lắng nghe và hỗ trợ bạn")
 
-# --- Quản lý API Key ---
-# Ưu tiên 1: Lấy key từ Streamlit Secrets (khi deploy)
-api_key_streamlit = st.secrets.get("GOOGLE_API_KEY")
+# --- Khởi tạo lịch sử chat trong Session State ---
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-# Ưu tiên 2: Lấy key từ file .env (khi chạy local) - Cần cài python-dotenv
-load_dotenv() # Tải biến môi trường từ .env (nếu có)
-api_key_env = os.getenv("GOOGLE_API_KEY")
-
-# Chọn API Key để sử dụng
-GOOGLE_API_KEY = None
-if api_key_streamlit:
-    GOOGLE_API_KEY = api_key_streamlit
-    # st.sidebar.success("Đã tải API Key từ Streamlit Secrets.", icon="✅") # Có thể bỏ comment nếu muốn debug
-elif api_key_env:
-    GOOGLE_API_KEY = api_key_env
-    # st.sidebar.info("Đã tải API Key từ file .env (local).", icon="📄") # Có thể bỏ comment nếu muốn debug
-
-# Dừng nếu không có API key
-if not GOOGLE_API_KEY:
-    st.error("Vui lòng cấu hình Google API Key trong Streamlit Secrets hoặc file .env!")
-    st.stop()
-
-# --- Khởi tạo mô hình Gemini ---
-try:
-    genai.configure(api_key=GOOGLE_API_KEY)
-    model = genai.GenerativeModel(
-        'gemini-1.5-flash-latest' # Hoặc 'gemini-pro', 'gemini-1.5-pro-latest' tùy nhu cầu
-    )
-    # Khởi tạo chat session trong session_state nếu chưa có
-    if "chat_session" not in st.session_state:
-         st.session_state.chat_session = model.start_chat(history=[])
-         # st.success("DEBUG: Khởi tạo chat session mới.") # Debug log
-
-except Exception as e:
-    st.error(f"Lỗi khởi tạo mô hình Gemini hoặc cấu hình API Key: {e}")
-    st.stop()
-
-# --- Giao diện Chat ---
-# Hiển thị lịch sử chat (nếu có)
-# Thêm kiểm tra sự tồn tại của session và history
-if "chat_session" in st.session_state and hasattr(st.session_state.chat_session, 'history'):
-    for message in st.session_state.chat_session.history:
-        msg_role = None # Biến tạm để lưu vai trò hợp lệ
-        # Kiểm tra xem message có thuộc tính 'role' và nó có phải là string không
-        if hasattr(message, 'role') and isinstance(message.role, str):
-            msg_role = message.role
-            # Chuẩn hóa 'model' thành 'assistant' nếu cần cho st.chat_message
-            if msg_role == 'model':
-                msg_role = 'assistant'
-        else:
-            # Xử lý trường hợp thiếu role hoặc role không hợp lệ
-            st.warning(f"Tin nhắn trong lịch sử có vai trò không hợp lệ hoặc bị thiếu.")
-            # Gán vai trò mặc định để thử hiển thị
-            msg_role = "assistant" # Hoặc có thể bỏ qua bằng 'continue'
-
-        # Chỉ hiển thị nếu có role hợp lệ (user hoặc assistant)
-        if msg_role in ["user", "assistant"]:
-            try:
-                # **SỬA LỖI QUAN TRỌNG: Dùng name= thay vì role=**
-                with st.chat_message(name=msg_role):
-                    # Kiểm tra message.parts và text trước khi truy cập
-                    if message.parts and hasattr(message.parts[0], 'text'):
-                        st.markdown(message.parts[0].text)
-                    else:
-                        st.markdown("_(Nội dung tin nhắn không hợp lệ hoặc bị thiếu)_")
-            except Exception as display_error:
-                 # Thông báo lỗi chi tiết hơn
-                 st.error(f"Lỗi khi hiển thị tin nhắn với name '{msg_role}': {display_error}")
-                 # In ra đối tượng message để debug (có thể dùng st.write)
-                 st.write(f"DEBUG: Message object gây lỗi hiển thị:", message)
-        else:
-            # Ghi log nếu gặp role không xử lý được
-            st.warning(f"Bỏ qua tin nhắn với vai trò không xác định: {msg_role}")
+# --- Hiển thị lời chào và giới thiệu ban đầu ---
+if not st.session_state.messages: # Chỉ hiển thị nếu lịch sử trống
+    with st.chat_message("assistant", avatar="🤖"):
+        st.markdown(
+            "Xin chào! Mình là AI Đồng Hành, ở đây để lắng nghe và hỗ trợ bạn. "
+            "Mình có thể cung cấp thông tin, gợi ý giải pháp cho các vấn đề học đường thường gặp. 😊"
+        )
+        st.markdown(
+             "**Lưu ý:** Mình chỉ là AI hỗ trợ, không thay thế chuyên gia tâm lý. "
+             "Nếu bạn đang gặp khủng hoảng, hãy liên hệ ngay với người lớn tin cậy hoặc [Đường dây nóng hỗ trợ](#). <span style='color:red; font-weight:bold;'>(Cần thay link/số thật)</span>",
+            unsafe_allow_html=True
+        )
+        # Thêm nút gợi ý nếu muốn
+        # cols = st.columns(3)
+        # if cols[0].button("Giúp về học tập"): st.session_state.topic = "học tập" # Ví dụ lưu chủ đề
+        # if cols[1].button("Giảm căng thẳng"): st.session_state.topic = "căng thẳng"
+        # if cols[2].button("Tìm hiểu ngành nghề"): st.session_state.topic = "nghề nghiệp"
 
 
-# Nhận input từ người dùng
-user_prompt = st.chat_input("Bạn cần hỗ trợ gì?")
+# --- Hiển thị các tin nhắn đã có trong lịch sử ---
+for message in st.session_state.messages:
+    role = message["role"]
+    avatar = "🧑‍🎓" if role == "user" else "🤖"
+    with st.chat_message(role, avatar=avatar):
+        st.markdown(message["content"])
+        # Hiển thị timestamp nếu có
+        if "timestamp" in message:
+             st.caption(message["timestamp"].strftime('%H:%M:%S %d/%m/%Y'))
 
-if user_prompt:
-    # Hiển thị tin nhắn người dùng
-    # **Sửa (tùy chọn nhưng nên làm): dùng name=**
-    with st.chat_message(name="user"):
-        st.markdown(user_prompt)
 
-    # Gửi prompt đến Gemini và hiển thị phản hồi
-    try:
-        # Đảm bảo chat_session tồn tại
-        if "chat_session" in st.session_state:
-            with st.spinner("AI đang suy nghĩ..."):
-                response = st.session_state.chat_session.send_message(user_prompt)
+# --- Ô nhập liệu và xử lý input mới ---
+prompt = st.chat_input("Bạn đang nghĩ gì? Hãy chia sẻ với mình...")
 
-            # Hiển thị phản hồi từ AI
-            # **Sửa (tùy chọn nhưng nên làm): dùng name=, vai trò là 'assistant'**
-            with st.chat_message(name="assistant"): # Gemini trả về vai trò 'model', nhưng st.chat_message dùng 'assistant'
-                 st.markdown(response.text)
-        else:
-            st.error("Lỗi: Phiên chat chưa được khởi tạo. Vui lòng tải lại trang.")
+if prompt:
+    # 1. Hiển thị tin nhắn người dùng
+    timestamp_user = datetime.datetime.now()
+    user_message = {"role": "user", "content": prompt, "timestamp": timestamp_user}
+    st.session_state.messages.append(user_message)
+    with st.chat_message("user", avatar="🧑‍🎓"):
+        st.markdown(prompt)
+        st.caption(timestamp_user.strftime('%H:%M:%S %d/%m/%Y'))
 
-    except Exception as e:
-        st.error(f"Đã xảy ra lỗi khi giao tiếp với AI Gemini: {e}")
+    # 2. Tạo phản hồi từ AI (Hiện tại chỉ là phản hồi giả lập)
+    # !!! THAY THẾ PHẦN NÀY BẰNG LOGIC GỌI AI THẬT SỰ !!!
+    timestamp_ai = datetime.datetime.now()
+    ai_response_content = f"AI đang xử lý: '{prompt}'... (Đây là phản hồi demo)"
 
-# --- (Tùy chọn) Các tính năng khác ở Sidebar ---
-st.sidebar.header("Thông tin thêm")
-st.sidebar.write("Đây là hệ thống AI Đồng Hành Học Đường phiên bản thử nghiệm.")
-# Bạn có thể thêm các thông tin khác, liên kết, hướng dẫn tại đây
+    # Giả lập thêm 1 phản hồi khác
+    if "học" in prompt.lower():
+        ai_response_content += "\n\nMình thấy bạn nhắc đến việc học. Bạn có muốn tìm hiểu về cách tập trung hay quản lý thời gian không?"
+    elif "buồn" in prompt.lower() or "căng thẳng" in prompt.lower():
+         ai_response_content += "\n\nMình hiểu bạn đang không vui. Hãy thử hít thở sâu 3 lần xem sao nhé?"
+
+
+    # 3. Hiển thị và lưu tin nhắn AI
+    ai_message = {"role": "assistant", "content": ai_response_content, "timestamp": timestamp_ai}
+    st.session_state.messages.append(ai_message)
+    with st.chat_message("assistant", avatar="🤖"):
+        st.markdown(ai_response_content)
+        st.caption(timestamp_ai.strftime('%H:%M:%S %d/%m/%Y'))
+
+    # Tự động cuộn xuống dưới cùng (có thể cần reload nhẹ trang)
+    # Streamlit thường tự xử lý việc này khá tốt với chat_input/chat_message
+
+# --- (Tùy chọn) Thanh bên với các liên kết ---
+with st.sidebar:
+    st.header("Công cụ khác")
+    st.page_link("pages/📚_Thư_viện_Tài_nguyên.py", label="📚 Thư viện Tài nguyên") # Giả sử có trang này
+    st.page_link("pages/📅_Đặt_lịch_hẹn.py", label="📅 Đặt lịch hẹn") # Giả sử có trang này
+    st.divider()
+    st.header("Hỗ trợ khẩn cấp")
+    # !!! THAY BẰNG THÔNG TIN THẬT !!!
+    st.markdown("- Đường dây nóng ABC: [Số điện thoại]")
+    st.markdown("- Tư vấn viên trường XYZ: [Thông tin liên hệ]")
