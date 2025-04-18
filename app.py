@@ -9,7 +9,14 @@ import psycopg2 # Để tương tác với PostgreSQL (Neon)
 import pandas as pd # Vẫn cần cho một số xử lý dữ liệu
 import uuid # Thư viện để tạo ID duy nhất
 
-# --- Ngay sau phần import ---
+
+# --- Cấu hình cơ bản ---
+st.set_page_config(
+    page_title="Trợ Lý Học Đường AI",
+    page_icon="🤖",
+    layout="wide" # Sử dụng layout rộng cho giao diện chat
+)
+
 def get_session_id():
     """Tạo hoặc lấy session_id duy nhất cho phiên hiện tại."""
     if "session_id" not in st.session_state:
@@ -35,12 +42,7 @@ if "api_chat_session" not in st.session_state:
 user_prompt = st.chat_input("Nhập câu hỏi hoặc điều bạn muốn chia sẻ...")
 
          
-# --- Cấu hình cơ bản ---
-st.set_page_config(
-    page_title="Trợ Lý Học Đường AI",
-    page_icon="🤖",
-    layout="wide" # Sử dụng layout rộng cho giao diện chat
-)
+
 
 st.title("🤖 Trợ Lý Học Đường AI")
 # Sử dụng caption đã chọn
