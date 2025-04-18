@@ -240,7 +240,6 @@ for message in st.session_state.gemini_history:
              st.error("❗ Hãy ưu tiên liên hệ hỗ trợ khẩn cấp theo thông tin trên.")
 
 # 3. Ô nhập liệu và xử lý
-user_prompt = st.chat_input("Nhập câu hỏi hoặc điều bạn muốn chia sẻ...")
 
 if user_prompt:
     # --- Lấy session_id đã được tạo ---
