@@ -125,7 +125,7 @@ elif authentication_status: # Đăng nhập thành công
         # Dữ liệu giả lập nếu chưa có CSDL
         return {"weekly_chats": 150, "new_alerts": 3, "popular_topic": "Thi cử (Demo)"}
 
-def fetch_alerts(conn, status_filter=None):
+    def fetch_alerts(conn, status_filter=None):
     # Nhánh này chỉ chạy nếu connect_db() trả về None
     if conn is None:
         st.warning("Không có kết nối CSDL, sử dụng dữ liệu giả lập cho cảnh báo.")
