@@ -170,25 +170,41 @@ def create_alert_in_db(session_id, reason, snippet, priority, status='Mới', us
         print(f"Creating alert: session={session_id}, reason='{reason}', priority={priority}")
         # **QUAN TRỌNG**: Đảm bảo tên bảng và cột khớp CSDL Neon
         sql = """
-            INSERT INTO alerts (chat_session_id, reason, snippet, priority, status, user_id_associated)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO alerts (chat_session_id, reason, snippet, priority, status)
+            VALUES (%s, %s, %s, %s, %s)
         """
-        cursor.execute(sql, (session_id, reason, snippet, priority, status, user_id_associated))
-        conn.commit() # Lưu vào CSDL
-        alert_created = True
-        print(f"Alert created successfully for session {session_id}.")
+        cursor.execute(sql, (session_id, reason, snippet, priority, status))
+        # Lấy ID vừa được tạo
+        result = cursor.fetchone()
+        if result:
+            new_alert_id = result[0]
+            conn.commit() # Chỉ commit nếu INSERT và fetch thành công
+            print(f"Alert created successfully for session {session_id}. Alert ID: {new_alert_id}")
+        else:
+            conn.rollback() # Rollback nếu không lấy được ID
+            print(f"--- DATABASE ERROR: Alert INSERT seemed to work, but failed to fetch RETURNING id ---")
+
+    except psycopg2.Error as db_err:
+        if conn: conn.rollback()
+        print(f"--- DATABASE ERROR Creating Alert (psycopg2) ---")
+        print(f"Session ID: {session_id}, Reason: {reason}")
+        print(f"PostgreSQL Error Code: {db_err.pgcode}")
+        print(f"Error Message: {db_err.pgerror}")
+        # In ra các giá trị đã thử chèn để dễ debug
+        print(f"Data passed: session='{session_id}', reason='{reason}', snippet='{snippet}', priority={priority}, status='{status}'")
+        print(f"-----------------------------------")
+        st.warning(f"Gặp sự cố CSDL khi tạo cảnh báo ({db_err.pgcode} - có thể do tên cột sai hoặc kiểu dữ liệu).") # Thông báo rõ hơn
     except Exception as e:
         if conn: conn.rollback()
-        print(f"--- DATABASE ERROR Creating Alert ---")
+        print(f"--- GENERAL ERROR Creating Alert ---")
         print(f"Session ID: {session_id}, Reason: {reason}")
         print(f"Error: {e}, Type: {type(e).__name__}")
         print(f"-----------------------------------")
-        st.warning(f"Gặp sự cố khi lưu cảnh báo vào hệ thống ({type(e).__name__}).") # Thông báo nhẹ nhàng
+        st.warning(f"Gặp sự cố hệ thống khi tạo cảnh báo ({type(e).__name__}).")
     finally:
         if cursor: cursor.close()
-        # Không đóng conn vì nó được cache
 
-    return alert_created
+    return new_alert_id # Trả về ID (hoặc None nếu lỗi)
 
 # --- Phần Logic Nhận diện Rủi ro ---
 
