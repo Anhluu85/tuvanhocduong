@@ -80,37 +80,35 @@ elif authentication_status: # Đăng nhập thành công
 
     # --- PHẦN TƯƠNG TÁC CSDL (CẦN THAY THẾ BẰNG LOGIC THẬT) ---
     # Ví dụ hàm kết nối (Cần triển khai thực tế)
-    @st.cache_resource # Cache kết nối để tránh mở lại liên tục
+    @st.cache_resource
     def connect_db():
         try:
-            # --- VIẾT CODE KẾT NỐI CSDL CỦA BẠN Ở ĐÂY ---
-            # Ví dụ với PostgreSQL (cần cài psycopg2-binary)
-            # import psycopg2
-            # conn = psycopg2.connect(
-            #     dbname=st.secrets["database"]["dbname"],
-            #     user=st.secrets["database"]["user"],
-            #     password=st.secrets["database"]["password"],
-            #     host=st.secrets["database"]["host"],
-            #     port=st.secrets["database"]["port"]
-            # )
-            # return conn
-
-            # Ví dụ với MongoDB (cần cài pymongo)
-            # from pymongo import MongoClient
-            # client = MongoClient(st.secrets["mongo"]["uri"])
-            # return client[st.secrets["mongo"]["dbname"]] # Trả về database object
-
-            # --- KẾT THÚC CODE KẾT NỐI ---
-
-            # Nếu chưa có code kết nối, trả về None để xử lý ở dưới
-            st.warning("Chưa cấu hình kết nối CSDL thực tế trong hàm connect_db()")
-            return None
+            # Ưu tiên đọc URI nếu có
+            if "uri" in st.secrets.get("database", {}):
+                 conn_uri = st.secrets["database"]["uri"]
+                 conn = psycopg2.connect(conn_uri)
+            # Nếu không có URI, dùng các tham số riêng lẻ
+            elif "host" in st.secrets.get("database", {}):
+                 db_creds = st.secrets["database"]
+                 conn = psycopg2.connect(
+                     host=db_creds["host"],
+                     port=db_creds.get("port", 5432), # Dùng get để có giá trị mặc định
+                     dbname=db_creds["dbname"],
+                     user=db_creds["user"],
+                     password=db_creds["password"],
+                     sslmode=db_creds.get("sslmode", "require") # Mặc định require
+                 )
+            else:
+                st.error("Thiếu thông tin kết nối CSDL trong Streamlit Secrets.")
+                return None
+    
+            # st.success("Kết nối Neon PostgreSQL thành công!") # Bỏ comment khi test
+            return conn
         except Exception as e:
-            st.error(f"Lỗi kết nối CSDL: {e}")
+            st.error(f"Lỗi kết nối Neon DB: {e}")
             return None
-
-    db_connection = connect_db() # Gọi hàm để lấy kết nối
-
+    
+    db_connection = connect_db()
     # Ví dụ các hàm lấy/cập nhật dữ liệu (Cần triển khai thực tế)
     def fetch_dashboard_stats(conn):
         # --- VIẾT CODE TRUY VẤN CSDL ĐỂ LẤY THỐNG KÊ ---
