@@ -164,47 +164,92 @@ def create_alert_in_db(session_id, reason, snippet, priority, status='Mới', us
         return False
 
     cursor = None
-    alert_created = False
+    #alert_created = False
+    new_alert_id = None # Khởi tạo ban đầu
     try:
+        print("Step 1: Getting cursor...") # DEBUG
         cursor = conn.cursor()
-        print(f"Creating alert: session={session_id}, reason='{reason}', priority={priority}")
-        # **QUAN TRỌNG**: Đảm bảo tên bảng và cột khớp CSDL Neon
+        print(f"Step 2: Cursor obtained: {cursor}") # DEBUG
+        print(f"Step 3: Preparing SQL: session={session_id}, reason='{reason}', snippet='{snippet}', priority={priority}, status='{status}'") # DEBUG
+    
+        # --- SQL ĐÚNG (như đã sửa) ---
         sql = """
             INSERT INTO alerts (chat_session_id, reason, snippet, priority, status)
             VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
         """
+    
+        print("Step 4: Executing SQL...") # DEBUG
         cursor.execute(sql, (session_id, reason, snippet, priority, status))
-        # Lấy ID vừa được tạo
+        print("Step 5: SQL executed.") # DEBUG
+    
+        print("Step 6: Fetching result...") # DEBUG
         result = cursor.fetchone()
+        print(f"Step 7: Result fetched: {result}") # DEBUG
+    
         if result:
+            print("Step 8: Assigning new_alert_id...") # DEBUG
             new_alert_id = result[0]
+            print(f"Step 9: new_alert_id assigned: {new_alert_id}. Committing...") # DEBUG
             conn.commit() # Chỉ commit nếu INSERT và fetch thành công
-            print(f"Alert created successfully for session {session_id}. Alert ID: {new_alert_id}")
+            print(f"Step 10: Commit successful.") # DEBUG
         else:
+            print("Step 8a: No result returned from fetchone(). Rolling back...") # DEBUG
             conn.rollback() # Rollback nếu không lấy được ID
-            print(f"--- DATABASE ERROR: Alert INSERT seemed to work, but failed to fetch RETURNING id ---")
-
+            print(f"--- DATABASE WARNING: Alert INSERT seemed to work, but failed to fetch RETURNING id ---") # Thay đổi thành WARNING
+    
+    # --- Khối except cho psycopg2.Error ---
     except psycopg2.Error as db_err:
-        if conn: conn.rollback()
-        print(f"--- DATABASE ERROR Creating Alert (psycopg2) ---")
-        print(f"Session ID: {session_id}, Reason: {reason}")
-        print(f"PostgreSQL Error Code: {db_err.pgcode}")
-        print(f"Error Message: {db_err.pgerror}")
-        # In ra các giá trị đã thử chèn để dễ debug
+        print(f"--- CAUGHT IN psycopg2.Error BLOCK ---") # DEBUG
+        print(f"Detailed psycopg2 Error Type: {type(db_err).__name__}")
+        print(f"Error arguments: {db_err.args}")
+        print(f"Error __str__(): {db_err}")
+        if conn:
+            try:
+                print(f"Connection status before rollback (psycopg2 err): {conn.status}")
+                conn.rollback()
+                print(f"Rollback successful (psycopg2 err).")
+            except Exception as rollback_err:
+                print(f"!!! ERROR during rollback (psycopg2 err): {rollback_err}")
+        else:
+             print("No connection object to rollback (psycopg2 err).")
+        print(f"PostgreSQL Error Code: {db_err.pgcode}") # Có thể vẫn None
+        print(f"Error Message: {db_err.pgerror}") # Có thể vẫn None
         print(f"Data passed: session='{session_id}', reason='{reason}', snippet='{snippet}', priority={priority}, status='{status}'")
-        print(f"-----------------------------------")
-        st.warning(f"Gặp sự cố CSDL khi tạo cảnh báo ({db_err.pgcode} - có thể do tên cột sai hoặc kiểu dữ liệu).") # Thông báo rõ hơn
+        st.warning(f"Gặp sự cố CSDL ({type(db_err).__name__}) khi tạo cảnh báo. Chi tiết xem log.")
+    
+    # --- Khối except cho các lỗi khác ---
     except Exception as e:
-        if conn: conn.rollback()
-        print(f"--- GENERAL ERROR Creating Alert ---")
-        print(f"Session ID: {session_id}, Reason: {reason}")
-        print(f"Error: {e}, Type: {type(e).__name__}")
-        print(f"-----------------------------------")
-        st.warning(f"Gặp sự cố hệ thống khi tạo cảnh báo ({type(e).__name__}).")
+        print(f"--- CAUGHT IN GENERAL Exception BLOCK ---") # DEBUG
+        print(f"General Error Type: {type(e).__name__}")
+        print(f"General Error arguments: {e.args}")
+        print(f"General Error __str__(): {e}")
+        # Kiểm tra xem có phải lỗi psycopg2 bị bắt ở đây không
+        if isinstance(e, psycopg2.Error):
+            print(">>> This general exception IS a psycopg2.Error! <<<")
+            print(f"pgcode: {e.pgcode}")
+            print(f"pgerror: {e.pgerror}")
+        if conn:
+            try:
+                print(f"Connection status before rollback (general err): {conn.status}")
+                conn.rollback()
+                print(f"Rollback successful (general err).")
+            except Exception as rollback_err:
+                print(f"!!! ERROR during rollback (general err): {rollback_err}")
+        else:
+            print("No connection object to rollback (general err).")
+        st.warning(f"Gặp sự cố hệ thống ({type(e).__name__}) khi tạo cảnh báo. Chi tiết xem log.")
+    
+    # --- Khối finally ---
     finally:
-        if cursor: cursor.close()
-
-    return new_alert_id # Trả về ID (hoặc None nếu lỗi)
+        print("Step FINAL: Entering finally block.") # DEBUG
+        if cursor:
+            print("Step FINAL: Closing cursor.") # DEBUG
+            cursor.close()
+        print(f"Step FINAL: Value of new_alert_id before return: {new_alert_id}") # DEBUG
+    
+    print(f"Step RETURN: Returning new_alert_id: {new_alert_id}") # DEBUG
+    return new_alert_id
 
 # --- Phần Logic Nhận diện Rủi ro ---
 
