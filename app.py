@@ -81,12 +81,14 @@ def connect_db():
         print(f"DB Connection Error: {e}")
         return None
 
-def create_alert_in_db(session_id, reason, snippet, priority, status='Mới', user_id_associated=None):
+# Trong hàm create_alert_in_db
+
+def create_alert_in_db(session_id, reason, snippet, priority, status='Mới', user_id_associated=None): # Vẫn nhận user_id nhưng không dùng trong INSERT
     """Tạo một bản ghi cảnh báo mới trong bảng 'alerts'."""
-    conn = connect_db() # Lấy kết nối (có thể trả về None)
+    conn = connect_db()
     if conn is None:
-        print("CRITICAL: Cannot create alert - No DB connection.")
-        st.warning("Không thể ghi nhận cảnh báo do lỗi kết nối CSDL.") # Thông báo nhẹ nhàng trên UI
+        print("Error in create_alert_in_db: No DB connection.")
+        st.warning("Không thể ghi nhận cảnh báo do lỗi kết nối CSDL.")
         return False
 
     cursor = None
@@ -94,13 +96,19 @@ def create_alert_in_db(session_id, reason, snippet, priority, status='Mới', us
     try:
         cursor = conn.cursor()
         print(f"Creating alert: session={session_id}, reason='{reason}', priority={priority}")
-        # **QUAN TRỌNG**: Đảm bảo tên bảng và cột khớp CSDL Neon
+
+        # --- SỬA LẠI DÒNG NÀY ---
+        # Bỏ user_id_associated khỏi danh sách cột
         sql = """
-            INSERT INTO alerts (chat_session_id, reason, snippet, priority, status, user_id_associated)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO alerts (chat_session_id, reason, snippet, priority, status)
+            VALUES (%s, %s, %s, %s, %s)
         """
-        cursor.execute(sql, (session_id, reason, snippet, priority, status, user_id_associated))
-        conn.commit() # Lưu vào CSDL
+        # --- VÀ SỬA LẠI DÒNG NÀY ---
+        # Bỏ user_id_associated khỏi tuple giá trị
+        cursor.execute(sql, (session_id, reason, snippet, priority, status))
+        # --------------------------
+
+        conn.commit()
         alert_created = True
         print(f"Alert created successfully for session {session_id}.")
     except Exception as e:
@@ -109,10 +117,9 @@ def create_alert_in_db(session_id, reason, snippet, priority, status='Mới', us
         print(f"Session ID: {session_id}, Reason: {reason}")
         print(f"Error: {e}, Type: {type(e).__name__}")
         print(f"-----------------------------------")
-        st.warning(f"Gặp sự cố khi lưu cảnh báo vào hệ thống ({type(e).__name__}).") # Thông báo nhẹ nhàng
+        st.warning(f"Gặp sự cố khi lưu cảnh báo vào hệ thống ({type(e).__name__}).")
     finally:
         if cursor: cursor.close()
-        # Không đóng conn vì nó được cache
 
     return alert_created
 
